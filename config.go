@@ -183,7 +183,6 @@ func parseConfig() error {
 		}
 		if vrs, ok := server["version"]; ok {
 			if vs, err := ei.N(vrs).String(); err == nil {
-				Log(InfoLevel, "xd", "servercfg version is %s", vrs)
 				configServer.Version = vs
 			} else {
 				return fmt.Errorf(InvalidConfigErr, "server.version", "must be string")
@@ -249,7 +248,6 @@ func parseConfig() error {
 			}
 			if _, ok := opts["version"]; ok {
 				if vs, err := ei.N(opts).M("version").String(); err == nil {
-					Log(InfoLevel, "xd", "servicecfg version is %s", opts["version"])
 					sc.Version = vs
 				} else {
 					return fmt.Errorf(InvalidConfigErr, "services."+name+".version", "must be string")

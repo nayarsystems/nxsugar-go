@@ -141,6 +141,9 @@ func parseServerUrl(server string) (string, string, string) {
 
 // GetConn returns the underlying nexus connection of a service
 func (s *Service) GetConn() *NexusConn {
+	if s.nc == nil {
+		return nil
+	}
 	return &NexusConn{NexusConn: *s.nc}
 }
 

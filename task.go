@@ -21,7 +21,11 @@ func (t *Task) GetConn() *NexusConn {
 	if tid == "" {
 		tid = newTrackId()
 	}
-	return &NexusConn{*t.Task.GetConn(), tid}
+	if conn := t.Task.GetConn(); conn == nil {
+		return nil
+	} else {
+		return &NexusConn{*conn, tid}
+	}
 }
 
 func (nc *NexusConn) TaskPush(method string, params interface{}, timeout time.Duration, opts ...*nexus.TaskOpts) (interface{}, error) {
