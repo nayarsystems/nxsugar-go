@@ -1,0 +1,24 @@
+{
+	"pacts": [
+		{
+			"input": {"v":"a"},
+			"output": {"r": "A"}
+		},
+		{
+			"input": {"v":"b"},
+			"output": {"r": "B"}
+		},
+		{
+			"input": {"v": [1, "2", {"3": 4}]},
+			"output": "lol"
+		},
+		{
+			"input": {"string": "xD"},
+			"output": 33
+		},
+		{
+			"input": {"e":"d"},
+			"output": {}
+		}
+	]
+}
