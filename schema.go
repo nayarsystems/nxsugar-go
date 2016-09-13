@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jaracil/ei"
 	"github.com/xeipuuv/gojsonschema"
 )
 
@@ -46,36 +47,36 @@ func (s *Service) AddMethodSchema(name string, schema *Schema, f func(*Task) (in
 	}
 }
 
-func (s *Service) addSchemaToMethod(name string, schema *Schema) error {
+func (s *Service) addSchemaToMethod(name string, schema *Schema) (error, map[string]interface{}) {
 	// Add schema from file
 	if schema.FromFile != "" {
 		file, err := os.Open(schema.FromFile)
 		if err != nil {
-			return fmt.Errorf("error adding method (%s) jsonschema from file: %s", name, err.Error())
+			return fmt.Errorf("error adding method (%s) jsonschema from file: %s", name, err.Error()), ei.M{"type": "schema_file"}
 		}
 		var newSch map[string]interface{}
 		err = json.NewDecoder(file).Decode(&newSch)
 		if err != nil {
-			return fmt.Errorf("error adding method (%s) jsonschema from file: %s", name, err.Error())
+			return fmt.Errorf("error adding method (%s) jsonschema from file: %s", name, err.Error()), ei.M{"type": "schema_file"}
 		}
 		if input, ok := newSch["input"]; ok {
 			src, _, validator, err := compileSchema("", input)
 			if err != nil {
-				return fmt.Errorf("error adding method (%s) input jsonschema: %s", name, err.Error())
+				return fmt.Errorf("error adding method (%s) input jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
 			s.methods[name].inSchema = &methodSchema{source: src, json: input, validator: validator}
 		}
 		if result, ok := newSch["result"]; ok {
 			src, _, validator, err := compileSchema("", result)
 			if err != nil {
-				return fmt.Errorf("error adding method (%s) result jsonschema: %s", name, err.Error())
+				return fmt.Errorf("error adding method (%s) result jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
 			s.methods[name].resSchema = &methodSchema{source: src, json: result, validator: validator}
 		}
 		if errs, ok := newSch["error"]; ok {
 			src, _, validator, err := compileSchema("", errs)
 			if err != nil {
-				return fmt.Errorf("error adding method (%s) error jsonschema: %s", name, err.Error())
+				return fmt.Errorf("error adding method (%s) error jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
 			s.methods[name].errSchema = &methodSchema{source: src, json: errs, validator: validator}
 		}
@@ -89,18 +90,18 @@ func (s *Service) addSchemaToMethod(name string, schema *Schema) error {
 								output: pactOutput,
 							})
 						} else {
-							return fmt.Errorf("error adding method (%s) pact (%d): missing output field", name, n)
+							return fmt.Errorf("error adding method (%s) pact (%d): missing output field", name, n), ei.M{"type": "adding_pact"}
 						}
 					} else {
-						return fmt.Errorf("error adding method (%s) pact (%d): missing input field", name, n)
+						return fmt.Errorf("error adding method (%s) pact (%d): missing input field", name, n), ei.M{"type": "adding_pact"}
 					}
 				} else {
-					return fmt.Errorf("error adding method (%s) pact (%d): must be map", name, n)
+					return fmt.Errorf("error adding method (%s) pact (%d): must be map", name, n), ei.M{"type": "adding_pact"}
 				}
 			}
 		}
 		file.Close()
-		return nil
+		return nil, nil
 	}
 
 	// Add schema from string
@@ -108,21 +109,21 @@ func (s *Service) addSchemaToMethod(name string, schema *Schema) error {
 		if schema.Input != "" {
 			_, sch, validator, err := compileSchemaFromJson(schema.Input)
 			if err != nil {
-				return fmt.Errorf("error adding method (%s) input jsonschema: %s", name, err.Error())
+				return fmt.Errorf("error adding method (%s) input jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
 			s.methods[name].inSchema = &methodSchema{source: schema.Input, json: sch, validator: validator}
 		}
 		if schema.Result != "" {
 			_, sch, validator, err := compileSchemaFromJson(schema.Result)
 			if err != nil {
-				return fmt.Errorf("error adding method (%s) result jsonschema: %s", name, err.Error())
+				return fmt.Errorf("error adding method (%s) result jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
 			s.methods[name].resSchema = &methodSchema{source: schema.Result, json: sch, validator: validator}
 		}
 		if schema.Error != "" {
 			_, sch, validator, err := compileSchemaFromJson(schema.Error)
 			if err != nil {
-				return fmt.Errorf("error adding method (%s) error jsonschema: %s", name, err.Error())
+				return fmt.Errorf("error adding method (%s) error jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
 			s.methods[name].errSchema = &methodSchema{source: schema.Error, json: sch, validator: validator}
 		}
@@ -131,17 +132,17 @@ func (s *Service) addSchemaToMethod(name string, schema *Schema) error {
 				methPact := &methodPact{}
 				err := json.Unmarshal([]byte(pact.Input), &methPact.input)
 				if err != nil {
-					return fmt.Errorf("error adding method (%s) pact (%d): parsing input json: %s", name, n, err.Error())
+					return fmt.Errorf("error adding method (%s) pact (%d): parsing input json: %s", name, n, err.Error()), ei.M{"type": "adding_pact"}
 				}
 				err = json.Unmarshal([]byte(pact.Output), &methPact.output)
 				if err != nil {
-					return fmt.Errorf("error adding method (%s) pact (%d): parsing output json: %s", name, n, err.Error())
+					return fmt.Errorf("error adding method (%s) pact (%d): parsing output json: %s", name, n, err.Error()), ei.M{"type": "adding_pact"}
 				}
 				s.methods[name].pacts = append(s.methods[name].pacts, methPact)
 			}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func compileSchemaFromJson(source string) (string, interface{}, *gojsonschema.Schema, error) {

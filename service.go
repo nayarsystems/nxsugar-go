@@ -165,9 +165,9 @@ func (s *Service) addMethod(name string, schema *Schema, f func(*Task) (interfac
 		s.methods[name].testf = defMethodWrapper(testf)
 	}
 	if schema != nil {
-		err := s.addSchemaToMethod(name, schema)
+		err, errM := s.addSchemaToMethod(name, schema)
 		if err != nil {
-			Log(ErrorLevel, s.Name, err.Error())
+			s.LogWithFields(ErrorLevel, errM, err.Error())
 			return err
 		}
 	}
@@ -430,7 +430,7 @@ func (s *Service) Serve() error {
 	// Return an error if no methods where added
 	if s.methods == nil && s.handler == nil {
 		err = fmt.Errorf("no methods to serve")
-		Log(ErrorLevel, s.Name, err.Error())
+		s.LogWithFields(ErrorLevel, ei.M{"type": "no_methods"}, err.Error())
 		return err
 	}
 
@@ -439,7 +439,7 @@ func (s *Service) Serve() error {
 		_, err = url.Parse(s.Url)
 		if err != nil {
 			err = fmt.Errorf("invalid nexus url (%s): %s", s.Url, err.Error())
-			Log(ErrorLevel, "server", err.Error())
+			LogWithFields(ErrorLevel, "server", ei.M{"type": "invalid_url"}, err.Error())
 			return err
 		}
 	}
@@ -476,10 +476,10 @@ func (s *Service) Serve() error {
 		s.nc, err = nxcli.Dial(s.Url, nxcli.NewDialOptions())
 		if err != nil {
 			if err == nxcli.ErrVersionIncompatible {
-				Log(WarnLevel, "server", "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, s.nc.NexusVersion)
+				LogWithFields(WarnLevel, "server", ei.M{"type": "incompatible_version"}, "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, s.nc.NexusVersion)
 			} else {
 				err = fmt.Errorf("can't connect to nexus server (%s): %s", s.Url, err.Error())
-				Log(ErrorLevel, "server", err.Error())
+				LogWithFields(ErrorLevel, "server", ei.M{"type": "connection_error"}, err.Error())
 				return err
 			}
 		}
@@ -488,13 +488,13 @@ func (s *Service) Serve() error {
 		_, err = s.nc.Login(s.User, s.Pass)
 		if err != nil {
 			err = fmt.Errorf("can't login to nexus server (%s) as (%s): %s", s.Url, s.User, err.Error())
-			Log(ErrorLevel, "server", err.Error())
+			LogWithFields(ErrorLevel, "server", ei.M{"type": "login_error"}, err.Error())
 			return err
 		}
 	}
 
 	// Output
-	Log(InfoLevel, s.Name, "%s", s)
+	s.LogWithFields(InfoLevel, s.logMap(), "%s", s)
 
 	// Serve
 	s.wg = &sync.WaitGroup{}
@@ -515,10 +515,10 @@ func (s *Service) Serve() error {
 			signalChan := make(chan os.Signal, 1)
 			signal.Notify(signalChan, os.Interrupt)
 			<-signalChan
-			Log(DebugLevel, "signal", "received SIGINT: stop gracefuly")
+			LogWithFields(DebugLevel, "signal", ei.M{"type": "graceful_requested"}, "received SIGINT: stop gracefuly")
 			s.GracefulStop()
 			<-signalChan
-			Log(DebugLevel, "signal", "received SIGINT again: stop")
+			LogWithFields(DebugLevel, "signal", ei.M{"type": "stop_requested"}, "received SIGINT again: stop")
 			s.Stop()
 		}()
 	}
@@ -536,7 +536,7 @@ func (s *Service) Serve() error {
 		case <-statsTicker.C:
 			if s.debugEnabled {
 				nst := s.GetStats()
-				Log(DebugLevel, s.Name, "stats: threads[ %d/%d ] task_pulls[ done=%d timeouts=%d ] tasks[ pulled=%d panic=%d errmethod=%d served=%d running=%d ]", s.threadsSem.Used(), s.threadsSem.Cap(), nst.TaskPullsDone, nst.TaskPullTimeouts, nst.TasksPulled, nst.TasksPanic, nst.TasksMethodNotFound, nst.TasksServed, nst.TasksRunning)
+				s.LogWithFields(DebugLevel, s.logStatsMap(), "stats: threads[ %d/%d ] task_pulls[ done=%d timeouts=%d ] tasks[ pulled=%d panic=%d errmethod=%d served=%d running=%d ]", s.threadsSem.Used(), s.threadsSem.Cap(), nst.TaskPullsDone, nst.TaskPullTimeouts, nst.TasksPulled, nst.TasksPanic, nst.TasksMethodNotFound, nst.TasksServed, nst.TasksRunning)
 			}
 		case graceful = <-s.stopServeCh: // Someone called Stop() or GracefulStop()
 			if !graceful {
@@ -558,29 +558,29 @@ func (s *Service) Serve() error {
 			continue
 		case <-gracefulTimeout.C: // Graceful timeout
 			if !graceful {
-				Log(DebugLevel, s.Name, "stop: done")
+				s.LogWithFields(DebugLevel, ei.M{"type": "stop"}, "stop: done")
 				return nil
 			}
 			s.nc.Close()
 			err = fmt.Errorf("graceful: timeout after %s", s.GracefulExit.String())
-			Log(ErrorLevel, s.Name, err.Error())
+			s.LogWithFields(ErrorLevel, ei.M{"type": "graceful_timeout"}, err.Error())
 			return err
 		case <-s.nc.GetContext().Done(): // Nexus connection ended
 			if s.isStopping() {
 				if graceful {
-					Log(DebugLevel, s.Name, "graceful: done")
+					s.LogWithFields(DebugLevel, ei.M{"type": "graceful"}, "graceful: done")
 				} else {
-					Log(DebugLevel, s.Name, "stop: done")
+					s.LogWithFields(DebugLevel, ei.M{"type": "stop"}, "stop: done")
 				}
 				return nil
 			}
 			if ctxErr := s.nc.GetContext().Err(); ctxErr != nil {
 				err = fmt.Errorf("stop: nexus connection ended: %s", ctxErr.Error())
-				Log(ErrorLevel, s.Name, err.Error())
+				s.LogWithFields(ErrorLevel, ei.M{"type": "connection_ended"}, err.Error())
 				return err
 			}
 			err = fmt.Errorf("stop: nexus connection ended: stopped serving")
-			Log(ErrorLevel, s.Name, err.Error())
+			s.LogWithFields(ErrorLevel, ei.M{"type": "connection_ended"}, err.Error())
 			return err
 		}
 	}
@@ -605,7 +605,7 @@ func (s *Service) taskPull(n int) {
 				continue
 			}
 			if !s.isStopping() || !IsNexusErrCode(err, ErrCancel) { // An error ocurred (bypass if cancelled because service stop)
-				Log(ErrorLevel, s.Name, "pull %d: pulling task: %s", n, err.Error())
+				s.LogWithFields(ErrorLevel, ei.M{"type": "pull_error"}, "pull %d: pulling task: %s", n, err.Error())
 			}
 			s.nc.Close()
 			s.threadsSem.Release()
@@ -615,7 +615,7 @@ func (s *Service) taskPull(n int) {
 		// A task has been pulled
 		atomic.AddUint64(&s.stats.TasksPulled, 1)
 		wtask := &Task{*task}
-		Log(DebugLevel, s.Name, "pull %d: task[ path=%s method=%s params=%+v tags=%+v ]", n, wtask.Path, wtask.Method, wtask.Params, wtask.Tags)
+		s.LogWithFields(InfoLevel, ei.M{"type": "pull", "path": wtask.Path, "method": wtask.Method, "params": wtask.Params, "tags": wtask.Tags}, "pull %d: task[ path=%s method=%s params=%+v tags=%+v ]", n, wtask.Path, wtask.Method, wtask.Params, wtask.Tags)
 
 		// Get method or global handler
 		m := s.handler
@@ -646,7 +646,7 @@ func (s *Service) taskPull(n int) {
 					if !ok {
 						nerr = fmt.Errorf("pkg: %v", r)
 					}
-					Log(ErrorLevel, s.Name, "pull %d: panic serving task: %s", n, nerr.Error())
+					s.LogWithFields(ErrorLevel, ei.M{"type": "task_exception"}, "pull %d: panic serving task: %s", n, nerr.Error())
 					wtask.SendError(ErrInternal, nerr.Error(), nil)
 				}
 			}()
@@ -701,9 +701,9 @@ func (s *Service) taskPull(n int) {
 			if m.resSchema != nil && wtask.Tags["@local-response-result"] != nil {
 				result, err := m.resSchema.validator.Validate(gojsonschema.NewGoLoader(wtask.Tags["@local-response-result"]))
 				if err != nil {
-					Log(ErrorLevel, s.Name, "jsonschema result validation failed: %s", err.Error())
+					s.LogWithFields(ErrorLevel, ei.M{"type": "output_schema_error"}, "jsonschema result validation failed: %s", err.Error())
 				} else if !result.Valid() {
-					Log(ErrorLevel, s.Name, "jsonschema result validation failed: %s", schemaValidationErr(result))
+					s.LogWithFields(ErrorLevel, ei.M{"type": "output_schema_error"}, "jsonschema result validation failed: %s", schemaValidationErr(result))
 				}
 			}
 
@@ -711,9 +711,9 @@ func (s *Service) taskPull(n int) {
 			if m.errSchema != nil && wtask.Tags["@local-response-error"] != nil {
 				result, err := m.errSchema.validator.Validate(gojsonschema.NewGoLoader(wtask.Tags["@local-response-error"]))
 				if err != nil {
-					Log(ErrorLevel, s.Name, "jsonschema error validation failed: %s", err.Error())
+					s.LogWithFields(ErrorLevel, ei.M{"type": "output_schema_error"}, "jsonschema error validation failed: %s", err.Error())
 				} else if !result.Valid() {
-					Log(ErrorLevel, s.Name, "jsonschema error validation failed: %s", schemaValidationErr(result))
+					s.LogWithFields(ErrorLevel, ei.M{"type": "output_schema_error"}, "jsonschema error validation failed: %s", schemaValidationErr(result))
 				}
 			}
 
@@ -737,15 +737,60 @@ func (s *Service) GetStats() *Stats {
 
 // Log allows to log from the service with the default format used by nxsugar
 func (s *Service) Log(level string, message string, args ...interface{}) {
-	Log(level, s.Name, message, args...)
+	fields := map[string]interface{}{}
+	conn := s.GetConn()
+	if conn != nil {
+		fields["connid"] = conn.Id()
+	}
+	LogWithFields(level, s.Name, fields, message, args...)
+}
+
+// LogWithFields allows to log from the service with the default format used by nxsugar adding some custom fields
+func (s *Service) LogWithFields(level string, fields map[string]interface{}, message string, args ...interface{}) {
+	if fields == nil {
+		fields = map[string]interface{}{}
+	}
+	fields["connid"] = s.GetConn().Id()
+	LogWithFields(level, s.Name, fields, message, args...)
 }
 
 // String returns some service info as a stirng
 func (s *Service) String() string {
 	if s.sharedConn {
-		return fmt.Sprintf("config: url=%s connId=%s user=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.GetConn().Id(), s.User, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
+		return fmt.Sprintf("config: url=%s user=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
 	}
-	return fmt.Sprintf("config: url=%s connId=%s user=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.GetConn().Id(), s.User, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
+	return fmt.Sprintf("config: url=%s user=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
+}
+
+func (s *Service) logMap() map[string]interface{} {
+	return ei.M{
+		"type":         "start",
+		"url":          s.Url,
+		"user":         s.User,
+		"version":      s.Version,
+		"path":         s.Path,
+		"pulls":        s.Pulls,
+		"pullTimeout":  s.PullTimeout.String(),
+		"maxThreads":   s.MaxThreads,
+		"logLevel":     s.LogLevel,
+		"statsPeriod":  s.StatsPeriod.String(),
+		"gracefulExit": s.GracefulExit.String(),
+	}
+}
+
+func (s *Service) logStatsMap() map[string]interface{} {
+	nst := s.GetStats()
+	return ei.M{
+		"threadsUsed":         s.threadsSem.Used(),
+		"threadsMax":          s.threadsSem.Cap(),
+		"taskPullsDone":       nst.TaskPullsDone,
+		"taskPullTimeouts":    nst.TaskPullTimeouts,
+		"tasksPulled":         nst.TasksPulled,
+		"tasksPanic":          nst.TasksPanic,
+		"tasksMethodNotFound": nst.TasksMethodNotFound,
+		"tasksServed":         nst.TasksServed,
+		"tasksRunning":        nst.TasksRunning,
+	}
 }
 
 func (s *Service) isStopping() bool {

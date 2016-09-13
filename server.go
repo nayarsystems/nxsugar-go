@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jaracil/ei"
 	nxcli "github.com/nayarsystems/nxgo"
 	. "github.com/nayarsystems/nxsugar-go/log"
 )
@@ -157,7 +158,7 @@ func (s *Server) Serve() error {
 	_, err := url.Parse(s.Url)
 	if err != nil {
 		err = fmt.Errorf("invalid nexus url (%s): %s", s.Url, err.Error())
-		Log(ErrorLevel, "server", err.Error())
+		LogWithFields(ErrorLevel, "server", ei.M{"type": "invalid_url"}, err.Error())
 		return err
 	}
 
@@ -165,10 +166,10 @@ func (s *Server) Serve() error {
 	nc, err := nxcli.Dial(s.Url, nxcli.NewDialOptions())
 	if err != nil {
 		if err == nxcli.ErrVersionIncompatible {
-			Log(WarnLevel, "server", "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, nc.NexusVersion)
+			LogWithFields(WarnLevel, "server", ei.M{"type": "incompatible_version"}, "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, nc.NexusVersion)
 		} else {
 			err = fmt.Errorf("can't connect to nexus server (%s): %s", s.Url, err.Error())
-			Log(ErrorLevel, "server", err.Error())
+			LogWithFields(ErrorLevel, "server", ei.M{"type": "connection_error"}, err.Error())
 			return err
 		}
 	}
@@ -177,14 +178,14 @@ func (s *Server) Serve() error {
 	_, err = nc.Login(s.User, s.Pass)
 	if err != nil {
 		err = fmt.Errorf("can't login to nexus server (%s) as (%s): %s", s.Url, s.User, err.Error())
-		Log(ErrorLevel, "server", err.Error())
+		LogWithFields(ErrorLevel, "server", ei.M{"type": "login_error"}, err.Error())
 		return err
 	}
 
 	// Configure services
 	if s.services == nil || len(s.services) == 0 {
 		err = fmt.Errorf("no services to serve")
-		Log(ErrorLevel, "server", err.Error())
+		LogWithFields(ErrorLevel, "server", ei.M{"type": "no_services"}, err.Error())
 		return err
 	}
 	for _, svc := range s.services {
@@ -197,12 +198,12 @@ func (s *Server) Serve() error {
 		signalChan := make(chan os.Signal, 1)
 		signal.Notify(signalChan, os.Interrupt)
 		<-signalChan
-		Log(DebugLevel, "signal", "received SIGINT: stop gracefuly")
+		LogWithFields(DebugLevel, "signal", ei.M{"type": "graceful_requested"}, "received SIGINT: stop gracefuly")
 		for _, svc := range s.services {
 			svc.GracefulStop()
 		}
 		<-signalChan
-		Log(DebugLevel, "signal", "received SIGINT again: stop")
+		LogWithFields(DebugLevel, "signal", ei.M{"type": "stop_requested"}, "received SIGINT again: stop")
 		for _, svc := range s.services {
 			svc.Stop()
 		}

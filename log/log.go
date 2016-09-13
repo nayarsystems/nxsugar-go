@@ -31,14 +31,21 @@ func (f *customFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 }
 
 func init() {
-	//log = logrus.New()
-	//jsonFmt := new(logrus.JSONFormatter)
-	//log.Formatter = jsonFmt
-	//log.Level = logrus.DebugLevel
+	SetJSONOutput(false)
+}
 
-	log = logrus.New()
-	log.Formatter = new(customFormatter)
-	log.Level = logrus.DebugLevel
+// SetProductionMode sets the log level to JSON format
+func SetJSONOutput(enabled bool) {
+	if enabled {
+		log = logrus.New()
+		jsonFmt := new(logrus.JSONFormatter)
+		log.Formatter = jsonFmt
+		log.Level = logrus.DebugLevel
+	} else {
+		log = logrus.New()
+		log.Formatter = new(customFormatter)
+		log.Level = logrus.DebugLevel
+	}
 }
 
 // SetLogLevel sets the log level to one of (debug, info, warn, error, fatal, panic)
@@ -80,7 +87,12 @@ func GetLogLevel() string {
 
 // Log
 func Log(level string, path string, message string, args ...interface{}) {
-	le := log.WithField("path", path)
+	LogWithFields(level, path, map[string]interface{}{}, message, args...)
+}
+
+// LogWithFields
+func LogWithFields(level string, path string, fields map[string]interface{}, message string, args ...interface{}) {
+	le := log.WithField("path", path).WithField("data", fields)
 	switch strings.ToLower(level) {
 	case PanicLevel:
 		le.Panicf(message, args...)
