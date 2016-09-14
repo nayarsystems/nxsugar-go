@@ -32,7 +32,13 @@ func (nc *NexusConn) TaskPush(method string, params interface{}, timeout time.Du
 	if params == nil {
 		params = ei.M{"@metadata": ei.M{"trackid": nc.trackid}}
 	} else if pm, err := ei.N(params).MapStr(); err == nil {
-		md := ei.N(pm).M("@metadata").MapStrZ()
+		if pm == nil {
+			pm = map[string]interface{}{}
+		}
+		md, err := ei.N(pm).M("@metadata").MapStr()
+		if err != nil || md == nil {
+			md = map[string]interface{}{}
+		}
 		tid := ei.N(md).M("trackid").StringZ()
 		if tid == "" {
 			tid = nc.trackid
