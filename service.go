@@ -53,6 +53,7 @@ type Service struct {
 	stopLock     *sync.Mutex
 	debugEnabled bool
 	sharedConn   bool
+	connId       string
 }
 
 type method struct {
@@ -154,6 +155,7 @@ Once SetConn is called, service url, user and password are ignored and the provi
 func (s *Service) SetConn(nc *nexus.NexusConn) {
 	s.nc = nc
 	s.sharedConn = true
+	s.connId = s.nc.Id()
 }
 
 func (s *Service) addMethod(name string, schema *Schema, f func(*Task) (interface{}, *JsonRpcErr), testf func(*Task) (interface{}, *JsonRpcErr)) error {
@@ -483,6 +485,7 @@ func (s *Service) Serve() error {
 				return err
 			}
 		}
+		s.connId = s.nc.Id()
 
 		// Login
 		_, err = s.nc.Login(s.User, s.Pass)
@@ -738,9 +741,8 @@ func (s *Service) GetStats() *Stats {
 // Log allows to log from the service with the default format used by nxsugar
 func (s *Service) Log(level string, message string, args ...interface{}) {
 	fields := map[string]interface{}{}
-	conn := s.GetConn()
-	if conn != nil {
-		fields["connid"] = conn.Id()
+	if s.connId != "" {
+		fields["connid"] = s.connId
 	}
 	LogWithFields(level, s.Name, fields, message, args...)
 }
@@ -750,7 +752,9 @@ func (s *Service) LogWithFields(level string, fields map[string]interface{}, mes
 	if fields == nil {
 		fields = map[string]interface{}{}
 	}
-	fields["connid"] = s.GetConn().Id()
+	if s.connId != "" {
+		fields["connid"] = s.connId
+	}
 	LogWithFields(level, s.Name, fields, message, args...)
 }
 
