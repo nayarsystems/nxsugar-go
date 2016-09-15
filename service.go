@@ -41,6 +41,7 @@ type Service struct {
 	LogLevel     string
 	Version      string
 	Testing      bool
+	ConnState    func(*NexusConn, NexusConnState)
 	nc           *nexus.NexusConn
 	methods      map[string]*method
 	handler      *method
@@ -53,6 +54,28 @@ type Service struct {
 	debugEnabled bool
 	sharedConn   bool
 	connId       string
+}
+
+type NexusConnState int
+
+func (cs NexusConnState) String() string {
+	return connStateStr[cs]
+}
+
+const (
+	StateInitializing NexusConnState = iota
+	StateConnecting
+	StateLoggingIn
+	StateServing
+	StateStopped
+)
+
+var connStateStr = map[NexusConnState]string{
+	StateInitializing: "initializing",
+	StateConnecting:   "connecting",
+	StateLoggingIn:    "logging in",
+	StateServing:      "serving",
+	StateStopped:      "stopped",
 }
 
 type method struct {
@@ -147,14 +170,12 @@ func (s *Service) GetConn() *NexusConn {
 	return &NexusConn{NexusConn: *s.nc}
 }
 
-/*
-SetConn sets the underlying nexus connection.
-Once SetConn is called, service url, user and password are ignored and the provided connection is used on serve.
-*/
-func (s *Service) SetConn(nc *nexus.NexusConn) {
+func (s *Service) setConn(nc *nexus.NexusConn) {
 	s.nc = nc
-	s.sharedConn = true
-	s.connId = s.nc.Id()
+	if nc != nil {
+		s.sharedConn = true
+		s.connId = s.nc.Id()
+	}
 }
 
 func (s *Service) addMethod(name string, schema *Schema, f func(*Task) (interface{}, *JsonRpcErr), testf func(*Task) (interface{}, *JsonRpcErr)) error {
@@ -417,6 +438,12 @@ func (s *Service) Stop() {
 	}
 }
 
+func (s *Service) setState(state NexusConnState) {
+	if hook := s.ConnState; hook != nil {
+		hook(s.GetConn(), state)
+	}
+}
+
 /*
 Serve connects and authenticates with nexus, starts all the pulls and starts serving.
 It returns any error with the service or the first error from one of its pulls.
@@ -424,6 +451,10 @@ A SIGINT will cause the service to start a graceful stop, if another SIGINT is r
 */
 func (s *Service) Serve() error {
 	var err error
+
+	defer s.setState(StateStopped)
+	defer s.setConn(nil)
+	s.setState(StateInitializing)
 
 	// Set log level
 	s.SetLogLevel(s.LogLevel)
@@ -473,6 +504,7 @@ func (s *Service) Serve() error {
 	}
 
 	if !s.sharedConn {
+		s.setState(StateConnecting)
 		// Dial
 		s.nc, err = nxcli.Dial(s.Url, nxcli.NewDialOptions())
 		if err != nil {
@@ -485,6 +517,7 @@ func (s *Service) Serve() error {
 			}
 		}
 		s.connId = s.nc.Id()
+		s.setState(StateLoggingIn)
 
 		// Login
 		_, err = s.nc.Login(s.User, s.Pass)
@@ -494,6 +527,7 @@ func (s *Service) Serve() error {
 			return err
 		}
 	}
+	s.setState(StateServing)
 
 	// Output
 	s.LogWithFields(InfoLevel, s.logMap(), "%s", s)

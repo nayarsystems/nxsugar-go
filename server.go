@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaracil/ei"
 	nxcli "github.com/nayarsystems/nxgo"
+	nexus "github.com/nayarsystems/nxgo/nxcore"
 )
 
 /*
@@ -30,6 +31,8 @@ type Server struct {
 	LogLevel     string
 	Testing      bool
 	Version      string
+	ConnState    func(*NexusConn, NexusConnState)
+	nc           *nexus.NexusConn
 	services     map[string]*Service
 	wg           *sync.WaitGroup
 }
@@ -41,6 +44,14 @@ Default values are used for the server.
 func NewServer(url string) *Server {
 	url, username, password := parseServerUrl(url)
 	return &Server{Url: url, User: username, Pass: password, Pulls: 1, PullTimeout: time.Hour, MaxThreads: 4, LogLevel: "info", StatsPeriod: time.Minute * 5, GracefulExit: time.Second * 20, Testing: false, Version: "0.0.0", services: map[string]*Service{}}
+}
+
+// GetConn returns the underlying nexus connection of a server
+func (s *Server) GetConn() *NexusConn {
+	if s.nc == nil {
+		return nil
+	}
+	return &NexusConn{NexusConn: *s.nc}
 }
 
 /*
@@ -147,12 +158,22 @@ func (s *Server) AddService(name string, path string, opts *ServiceOpts) *Servic
 	return svc
 }
 
+func (s *Server) setState(state NexusConnState) {
+	if hook := s.ConnState; hook != nil {
+		hook(s.GetConn(), state)
+	}
+}
+
 /*
 Serve connects and authenticates with nexus, starts all the services and waits them to end.
 It returns any error with the server or the first error from one of the services that caused the nexus connection to stop.
 A SIGINT will cause the server to start a graceful stop, if another SIGINT is received then a hard stop will be done.
 */
 func (s *Server) Serve() error {
+	defer s.setState(StateStopped)
+	defer func() { s.nc = nil }()
+	s.setState(StateInitializing)
+
 	// Parse url
 	_, err := url.Parse(s.Url)
 	if err != nil {
@@ -161,6 +182,7 @@ func (s *Server) Serve() error {
 		return err
 	}
 
+	s.setState(StateConnecting)
 	// Dial
 	nc, err := nxcli.Dial(s.Url, nxcli.NewDialOptions())
 	if err != nil {
@@ -173,6 +195,7 @@ func (s *Server) Serve() error {
 		}
 	}
 
+	s.setState(StateLoggingIn)
 	// Login
 	_, err = nc.Login(s.User, s.Pass)
 	if err != nil {
@@ -189,7 +212,7 @@ func (s *Server) Serve() error {
 	}
 	for _, svc := range s.services {
 		svc.SetLogLevel(s.LogLevel)
-		svc.SetConn(nc)
+		svc.setConn(nc)
 	}
 
 	// Wait for signal
@@ -223,6 +246,8 @@ func (s *Server) Serve() error {
 			s.wg.Done()
 		}(svc)
 	}
+
+	s.setState(StateServing)
 
 	var serveErr error
 	s.wg.Wait()
