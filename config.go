@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jaracil/ei"
-	. "github.com/nayarsystems/nxsugar-go/log"
 	flag "github.com/ogier/pflag"
 )
 
@@ -57,6 +56,14 @@ InvalidConfigErr is used for standard logging when custom service config paramet
 var InvalidConfigErr = "invalid parameter (%s) on config file: %s"
 var _logLevels = []string{"debug", "info", "warn", "error", "fatal", "panic"}
 
+func init() {
+	// Get config flags
+	flag.StringVarP(&configFile, "config", "c", "config.json", "JSON configuration file")
+	flag.BoolVar(&productionMode, "production", false, "Enables Production mode")
+	flag.Parse()
+	SetJSONOutput(productionMode)
+}
+
 func parseConfig() (error, map[string]interface{}) {
 	if !configParsed {
 		configServer = serverConfig{
@@ -69,14 +76,6 @@ func parseConfig() (error, map[string]interface{}) {
 			StatsPeriod:  1800,
 			Services:     map[string]serviceConfig{},
 		}
-
-		// Get config file name
-		flag.StringVarP(&configFile, "config", "c", "config.json", "JSON configuration file")
-		flag.BoolVar(&productionMode, "production", false, "Enables Production mode")
-		flag.Parse()
-
-		// Set log output
-		SetJSONOutput(productionMode)
 
 		// Open file
 		cf, err := os.Open(configFile)

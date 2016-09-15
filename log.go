@@ -1,5 +1,4 @@
-// Package log
-package log
+package nxsugar
 
 import (
 	"fmt"
@@ -28,10 +27,6 @@ type customFormatter struct {
 func (f *customFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	path := entry.Data["path"]
 	return []byte(fmt.Sprintf("[%s] [%s] [%s] %s\n", entry.Time.Format(time.RFC3339), strings.ToUpper(entry.Level.String()[:4]), path, entry.Message)), nil
-}
-
-func init() {
-	SetJSONOutput(false)
 }
 
 // SetProductionMode sets the log level to JSON format

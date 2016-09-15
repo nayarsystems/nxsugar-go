@@ -8,7 +8,7 @@ import (
 )
 
 type NexusConn struct {
-	nexus.NexusConn
+	*nexus.NexusConn
 	trackid string
 }
 
@@ -24,7 +24,7 @@ func (t *Task) GetConn() *NexusConn {
 	if conn := t.Task.GetConn(); conn == nil {
 		return nil
 	} else {
-		return &NexusConn{*conn, tid}
+		return &NexusConn{conn, tid}
 	}
 }
 
