@@ -167,7 +167,7 @@ func (s *Service) GetConn() *NexusConn {
 	if s.nc == nil {
 		return nil
 	}
-	return &NexusConn{NexusConn: *s.nc}
+	return &NexusConn{NexusConn: s.nc}
 }
 
 func (s *Service) setConn(nc *nexus.NexusConn) {

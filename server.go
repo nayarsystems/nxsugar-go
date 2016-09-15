@@ -51,7 +51,7 @@ func (s *Server) GetConn() *NexusConn {
 	if s.nc == nil {
 		return nil
 	}
-	return &NexusConn{NexusConn: *s.nc}
+	return &NexusConn{NexusConn: s.nc}
 }
 
 /*
