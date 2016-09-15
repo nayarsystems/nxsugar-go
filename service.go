@@ -17,7 +17,6 @@ import (
 	"github.com/jaracil/ei"
 	nxcli "github.com/nayarsystems/nxgo"
 	nexus "github.com/nayarsystems/nxgo/nxcore"
-	. "github.com/nayarsystems/nxsugar-go/log"
 )
 
 /*

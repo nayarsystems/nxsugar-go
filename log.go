@@ -1,5 +1,4 @@
-// Package log
-package log
+package nxsugar
 
 import (
 	"fmt"

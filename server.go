@@ -10,7 +10,6 @@ import (
 
 	"github.com/jaracil/ei"
 	nxcli "github.com/nayarsystems/nxgo"
-	. "github.com/nayarsystems/nxsugar-go/log"
 )
 
 /*

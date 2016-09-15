@@ -5,7 +5,6 @@ import (
 
 	"github.com/jaracil/ei"
 	"github.com/nayarsystems/nxsugar-go"
-	. "github.com/nayarsystems/nxsugar-go/log"
 )
 
 func main() {
@@ -27,7 +26,7 @@ func main() {
 		sleep = 0
 	}
 
-	s.Log(InfoLevel, "My sleep opt: %d", sleep)
+	s.Log(nxsugar.InfoLevel, "My sleep opt: %d", sleep)
 
 	if err = s.AddMethodSchema("person", &nxsugar.Schema{FromFile: "personSchema.json"},
 		func(task *nxsugar.Task) (interface{}, *nxsugar.JsonRpcErr) {

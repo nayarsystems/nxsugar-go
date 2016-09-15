@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jaracil/ei"
-	. "github.com/nayarsystems/nxsugar-go/log"
 	flag "github.com/ogier/pflag"
 )
 
