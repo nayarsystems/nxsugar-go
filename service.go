@@ -630,9 +630,13 @@ func (s *Service) taskPull(n int) {
 		if s.isStopping() {
 			return
 		}
+		s.threadsSem.Acquire()
+		if s.isStopping() {
+			s.threadsSem.Release()
+			return
+		}
 
 		// Make a task pull
-		s.threadsSem.Acquire()
 		atomic.AddUint64(&s.stats.TaskPullsDone, 1)
 		task, err := s.nc.TaskPull(s.Path, s.PullTimeout)
 		if err != nil {
@@ -641,7 +645,7 @@ func (s *Service) taskPull(n int) {
 				s.threadsSem.Release()
 				continue
 			}
-			if !s.isStopping() || !IsNexusErrCode(err, ErrCancel) { // An error ocurred (bypass if cancelled because service stop)
+			if !s.isStopping() || !IsNexusErrCode(err, ErrConnClosed) { // An error ocurred (bypass if cancelled because service stop)
 				s.LogWithFields(ErrorLevel, ei.M{"type": "pull_error"}, "pull %d: pulling task: %s", n, err.Error())
 			}
 			s.nc.Close()
@@ -795,9 +799,9 @@ func (s *Service) LogWithFields(level string, fields map[string]interface{}, mes
 // String returns some service info as a stirng
 func (s *Service) String() string {
 	if s.sharedConn {
-		return fmt.Sprintf("config: url=%s user=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
+		return fmt.Sprintf("config: url=%s user=%s connid=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.connId, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
 	}
-	return fmt.Sprintf("config: url=%s user=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
+	return fmt.Sprintf("config: url=%s user=%s connid=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.connId, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
 }
 
 func (s *Service) logMap() map[string]interface{} {
@@ -805,6 +809,7 @@ func (s *Service) logMap() map[string]interface{} {
 		"type":         "start",
 		"url":          s.Url,
 		"user":         s.User,
+		"connid":       s.connId,
 		"version":      s.Version,
 		"path":         s.Path,
 		"pulls":        s.Pulls,
