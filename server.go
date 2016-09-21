@@ -182,6 +182,13 @@ func (s *Server) Serve() error {
 		return err
 	}
 
+	// Check services
+	if s.services == nil || len(s.services) == 0 {
+		err = fmt.Errorf("no services to serve")
+		LogWithFields(ErrorLevel, "server", ei.M{"type": "no_services"}, err.Error())
+		return err
+	}
+
 	s.setState(StateConnecting)
 	// Dial
 	nc, err := nxcli.Dial(s.Url, nxcli.NewDialOptions())
@@ -205,11 +212,6 @@ func (s *Server) Serve() error {
 	}
 
 	// Configure services
-	if s.services == nil || len(s.services) == 0 {
-		err = fmt.Errorf("no services to serve")
-		LogWithFields(ErrorLevel, "server", ei.M{"type": "no_services"}, err.Error())
-		return err
-	}
 	for _, svc := range s.services {
 		svc.SetLogLevel(s.LogLevel)
 		svc.setConn(nc)

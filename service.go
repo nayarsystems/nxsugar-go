@@ -301,11 +301,11 @@ func ReplyToWrapper(f func(*Task) (interface{}, *JsonRpcErr)) func(*Task) (inter
 		} else if repTy == "pipe" {
 			if pipe, err := t.GetConn().PipeOpen(repPath); err != nil {
 				Log(WarnLevel, "replyto wrapper", "could not open received pipeId (%s): %s", repPath, err.Error())
-			} else if _, err = pipe.Write(map[string]interface{}{"result": res, "error": errm}); err != nil {
+			} else if _, err = pipe.Write(map[string]interface{}{"result": res, "error": errm, "task": map[string]interface{}{"path": t.Path, "method": t.Method, "params": t.Params, "tags": t.Tags}}); err != nil {
 				Log(WarnLevel, "replyto wrapper", "error writing response to pipe: %s", err.Error())
 			}
 		} else if repTy == "service" {
-			if _, err := t.GetConn().TaskPush(repPath, map[string]interface{}{"result": res, "error": errm}, time.Second*30, &nexus.TaskOpts{Detach: true}); err != nil {
+			if _, err := t.GetConn().TaskPush(repPath, map[string]interface{}{"result": res, "error": errm, map[string]interface{}{"path": t.Path, "method": t.Method, "params": t.Params, "tags": t.Tags}}, time.Second*30, &nexus.TaskOpts{Detach: true}); err != nil {
 				Log(WarnLevel, "replyto wrapper", "could not push response task to received path (%s): %s", repPath, err.Error())
 			}
 		}
