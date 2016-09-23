@@ -191,7 +191,7 @@ func (s *Server) Serve() error {
 
 	s.setState(StateConnecting)
 	// Dial
-	nc, err := nxcli.Dial(s.Url, nxcli.NewDialOptions())
+	s.nc, err = nxcli.Dial(s.Url, nxcli.NewDialOptions())
 	if err != nil {
 		if err == nxcli.ErrVersionIncompatible {
 			LogWithFields(WarnLevel, "server", ei.M{"type": "incompatible_version"}, "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, nc.NexusVersion)
