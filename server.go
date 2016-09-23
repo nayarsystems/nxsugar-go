@@ -194,7 +194,7 @@ func (s *Server) Serve() error {
 	s.nc, err = nxcli.Dial(s.Url, nxcli.NewDialOptions())
 	if err != nil {
 		if err == nxcli.ErrVersionIncompatible {
-			LogWithFields(WarnLevel, "server", ei.M{"type": "incompatible_version"}, "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, nc.NexusVersion)
+			LogWithFields(WarnLevel, "server", ei.M{"type": "incompatible_version"}, "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, s.nc.NexusVersion)
 		} else {
 			err = fmt.Errorf("can't connect to nexus server (%s): %s", s.Url, err.Error())
 			LogWithFields(ErrorLevel, "server", ei.M{"type": "connection_error"}, err.Error())
@@ -204,7 +204,7 @@ func (s *Server) Serve() error {
 
 	s.setState(StateLoggingIn)
 	// Login
-	_, err = nc.Login(s.User, s.Pass)
+	_, err = s.nc.Login(s.User, s.Pass)
 	if err != nil {
 		err = fmt.Errorf("can't login to nexus server (%s) as (%s): %s", s.Url, s.User, err.Error())
 		LogWithFields(ErrorLevel, "server", ei.M{"type": "login_error"}, err.Error())
@@ -214,7 +214,7 @@ func (s *Server) Serve() error {
 	// Configure services
 	for _, svc := range s.services {
 		svc.SetLogLevel(s.LogLevel)
-		svc.setConn(nc)
+		svc.setConn(s.nc)
 	}
 
 	// Wait for signal

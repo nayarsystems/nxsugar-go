@@ -7,7 +7,7 @@
     },
     "services": {
         "handler": {
-            "path": "test.sugar.handler"
+            "path": "test.nxsugar.handler"
         }
     }
 }

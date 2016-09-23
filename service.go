@@ -305,7 +305,7 @@ func ReplyToWrapper(f func(*Task) (interface{}, *JsonRpcErr)) func(*Task) (inter
 				Log(WarnLevel, "replyto wrapper", "error writing response to pipe: %s", err.Error())
 			}
 		} else if repTy == "service" {
-			if _, err := t.GetConn().TaskPush(repPath, map[string]interface{}{"result": res, "error": errm, map[string]interface{}{"path": t.Path, "method": t.Method, "params": t.Params, "tags": t.Tags}}, time.Second*30, &nexus.TaskOpts{Detach: true}); err != nil {
+			if _, err := t.GetConn().TaskPush(repPath, map[string]interface{}{"result": res, "error": errm, "task": map[string]interface{}{"path": t.Path, "method": t.Method, "params": t.Params, "tags": t.Tags}}, time.Second*30, &nexus.TaskOpts{Detach: true}); err != nil {
 				Log(WarnLevel, "replyto wrapper", "could not push response task to received path (%s): %s", repPath, err.Error())
 			}
 		}
