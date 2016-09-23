@@ -687,8 +687,9 @@ func (s *Service) taskPull(n int) {
 					if !ok {
 						nerr = fmt.Errorf("pkg: %v", r)
 					}
-					s.LogWithFields(ErrorLevel, ei.M{"type": "task_exception"}, "pull %d: panic serving task: %s: %s", n, nerr.Error(), debug.Stack())
-					wtask.SendError(ErrInternal, nerr.Error(), nil)
+					stck := debug.Stack()
+					s.LogWithFields(ErrorLevel, ei.M{"type": "task_exception"}, "pull %d: panic serving task: %s: %s", n, nerr.Error(), stck)
+					wtask.SendError(ErrInternal, fmt.Sprintf("%s: %s", nerr.Error(), stck), nil)
 				}
 			}()
 
