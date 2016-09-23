@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -300,11 +301,11 @@ func ReplyToWrapper(f func(*Task) (interface{}, *JsonRpcErr)) func(*Task) (inter
 		} else if repTy == "pipe" {
 			if pipe, err := t.GetConn().PipeOpen(repPath); err != nil {
 				Log(WarnLevel, "replyto wrapper", "could not open received pipeId (%s): %s", repPath, err.Error())
-			} else if _, err = pipe.Write(map[string]interface{}{"result": res, "error": errm}); err != nil {
+			} else if _, err = pipe.Write(map[string]interface{}{"result": res, "error": errm, "task": map[string]interface{}{"path": t.Path, "method": t.Method, "params": t.Params, "tags": t.Tags}}); err != nil {
 				Log(WarnLevel, "replyto wrapper", "error writing response to pipe: %s", err.Error())
 			}
 		} else if repTy == "service" {
-			if _, err := t.GetConn().TaskPush(repPath, map[string]interface{}{"result": res, "error": errm}, time.Second*30, &nexus.TaskOpts{Detach: true}); err != nil {
+			if _, err := t.GetConn().TaskPush(repPath, map[string]interface{}{"result": res, "error": errm, "task": map[string]interface{}{"path": t.Path, "method": t.Method, "params": t.Params, "tags": t.Tags}}, time.Second*30, &nexus.TaskOpts{Detach: true}); err != nil {
 				Log(WarnLevel, "replyto wrapper", "could not push response task to received path (%s): %s", repPath, err.Error())
 			}
 		}
@@ -629,9 +630,13 @@ func (s *Service) taskPull(n int) {
 		if s.isStopping() {
 			return
 		}
+		s.threadsSem.Acquire()
+		if s.isStopping() {
+			s.threadsSem.Release()
+			return
+		}
 
 		// Make a task pull
-		s.threadsSem.Acquire()
 		atomic.AddUint64(&s.stats.TaskPullsDone, 1)
 		task, err := s.nc.TaskPull(s.Path, s.PullTimeout)
 		if err != nil {
@@ -640,7 +645,7 @@ func (s *Service) taskPull(n int) {
 				s.threadsSem.Release()
 				continue
 			}
-			if !s.isStopping() || !IsNexusErrCode(err, ErrCancel) { // An error ocurred (bypass if cancelled because service stop)
+			if !s.isStopping() || !IsNexusErrCode(err, ErrConnClosed) { // An error ocurred (bypass if cancelled because service stop)
 				s.LogWithFields(ErrorLevel, ei.M{"type": "pull_error"}, "pull %d: pulling task: %s", n, err.Error())
 			}
 			s.nc.Close()
@@ -682,8 +687,9 @@ func (s *Service) taskPull(n int) {
 					if !ok {
 						nerr = fmt.Errorf("pkg: %v", r)
 					}
-					s.LogWithFields(ErrorLevel, ei.M{"type": "task_exception"}, "pull %d: panic serving task: %s", n, nerr.Error())
-					wtask.SendError(ErrInternal, nerr.Error(), nil)
+					stck := debug.Stack()
+					s.LogWithFields(ErrorLevel, ei.M{"type": "task_exception"}, "pull %d: panic serving task: %s: %s", n, nerr.Error(), stck)
+					wtask.SendError(ErrInternal, fmt.Sprintf("%s: %s", nerr.Error(), stck), nil)
 				}
 			}()
 
@@ -794,9 +800,9 @@ func (s *Service) LogWithFields(level string, fields map[string]interface{}, mes
 // String returns some service info as a stirng
 func (s *Service) String() string {
 	if s.sharedConn {
-		return fmt.Sprintf("config: url=%s user=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
+		return fmt.Sprintf("config: url=%s user=%s connid=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.connId, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
 	}
-	return fmt.Sprintf("config: url=%s user=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
+	return fmt.Sprintf("config: url=%s user=%s connid=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.connId, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
 }
 
 func (s *Service) logMap() map[string]interface{} {
@@ -804,6 +810,7 @@ func (s *Service) logMap() map[string]interface{} {
 		"type":         "start",
 		"url":          s.Url,
 		"user":         s.User,
+		"connid":       s.connId,
 		"version":      s.Version,
 		"path":         s.Path,
 		"pulls":        s.Pulls,

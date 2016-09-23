@@ -8,7 +8,7 @@
     },
     "services": {
         "example": {
-            "path": "test.sugar.example",
+            "path": "test.nxsugar.example",
             "pulls": 4,
             "max-threads": 60
         }
