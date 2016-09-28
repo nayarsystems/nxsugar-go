@@ -42,6 +42,7 @@ NewServer returns a server that will connect and authenticate with the provided 
 Default values are used for the server.
 */
 func NewServer(url string) *Server {
+	parseFlags()
 	url, username, password := parseServerUrl(url)
 	return &Server{Url: url, User: username, Pass: password, Pulls: 1, PullTimeout: time.Hour, MaxThreads: 4, LogLevel: "info", StatsPeriod: time.Minute * 5, GracefulExit: time.Second * 20, Testing: false, Version: "0.0.0", services: map[string]*Service{}}
 }
@@ -170,6 +171,7 @@ It returns any error with the server or the first error from one of the services
 A SIGINT will cause the server to start a graceful stop, if another SIGINT is received then a hard stop will be done.
 */
 func (s *Server) Serve() error {
+	parseFlags()
 	defer s.setState(StateStopped)
 	defer func() { s.nc = nil }()
 	s.setState(StateInitializing)

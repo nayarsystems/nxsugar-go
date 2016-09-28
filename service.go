@@ -119,6 +119,7 @@ StatsPeriod defaults to 5 minutes
 GracefulExitTime defaults to 20 seconds
 */
 func NewService(url string, path string, opts *ServiceOpts) *Service {
+	parseFlags()
 	url, username, password := parseServerUrl(url)
 	opts = populateOpts(opts)
 	return &Service{Name: "service", Url: url, User: username, Pass: password, Path: path, Pulls: opts.Pulls, PullTimeout: opts.PullTimeout, MaxThreads: opts.MaxThreads, LogLevel: "info", StatsPeriod: time.Minute * 5, GracefulExit: time.Second * 20, Testing: opts.Testing, Version: "0.0.0"}
@@ -451,6 +452,7 @@ It returns any error with the service or the first error from one of its pulls.
 A SIGINT will cause the service to start a graceful stop, if another SIGINT is received then a hard stop will be done.
 */
 func (s *Service) Serve() error {
+	parseFlags()
 	var err error
 
 	defer s.setState(StateStopped)
