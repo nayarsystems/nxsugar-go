@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jaracil/ei"
-	flag "github.com/ogier/pflag"
 )
 
 type serverConfig struct {
@@ -40,10 +39,12 @@ type ServerFromConfig struct {
 }
 
 var config map[string]interface{}
-var productionMode bool
-var configFile string
 var configParsed = false
 var configServer serverConfig
+var configFile string
+
+var productionModeSet = false
+var productionMode bool
 
 /*
 MissingConfigErr is used for standard logging when custom service config parameter has been not found.
@@ -55,14 +56,6 @@ InvalidConfigErr is used for standard logging when custom service config paramet
 */
 var InvalidConfigErr = "invalid parameter (%s) on config file: %s"
 var _logLevels = []string{"debug", "info", "warn", "error", "fatal", "panic"}
-
-func init() {
-	// Get config flags
-	flag.StringVarP(&configFile, "config", "c", "config.json", "JSON configuration file")
-	flag.BoolVar(&productionMode, "production", false, "Enables Production mode")
-	flag.Parse()
-	SetJSONOutput(productionMode)
-}
 
 func parseConfig() (error, map[string]interface{}) {
 	if !configParsed {
@@ -265,11 +258,28 @@ func parseConfig() (error, map[string]interface{}) {
 }
 
 /*
+SetConfigFile specifies the file where the config will be parsed
+*/
+func SetConfigFile(cf string) {
+	configFile = cf
+}
+
+/*
+SetProductionMode specifies wheter the service is in production mode or not
+*/
+func SetProductionMode(t bool) {
+	productionModeSet = true
+	productionMode = t
+	SetJSONOutput(productionMode)
+}
+
+/*
 NewServerFromConfig returns a new nexus server from the configuration file or any error while parsing it (with the format of InvalidConfigErr and MissingConfigErr).
 Services can be added to the server with calls to `AddService()`.
 If the config has not been previously parsed `NewServerFromConfig` parses it.
 */
 func NewServerFromConfig() (*ServerFromConfig, error) {
+	parseFlags()
 	if err, errM := parseConfig(); err != nil {
 		LogWithFields(ErrorLevel, "config", errM, err.Error())
 		return nil, err
@@ -318,6 +328,7 @@ NewServiceFromConfig returns a new nexus service from the configuration file or 
 If the config has not been previously parsed `NewServiceFromConfig` parses it.
 */
 func NewServiceFromConfig(name string) (*Service, error) {
+	parseFlags()
 	if err, errM := parseConfig(); err != nil {
 		LogWithFields(ErrorLevel, "config", errM, err.Error())
 		return nil, err
@@ -353,6 +364,7 @@ GetConfig returns a map with the parsed configuration or any error while parsing
 If the config has not been previously parsed `GetConfig` parses it.
 */
 func GetConfig() (map[string]interface{}, error) {
+	parseFlags()
 	if err, errM := parseConfig(); err != nil {
 		LogWithFields(ErrorLevel, "config", errM, err.Error())
 		return nil, err
