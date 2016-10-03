@@ -55,6 +55,7 @@ type Service struct {
 	debugEnabled bool
 	sharedConn   bool
 	connId       string
+	connLock     sync.Mutex
 }
 
 type NexusConnState int
@@ -166,17 +167,30 @@ func parseServerUrl(server string) (string, string, string) {
 
 // GetConn returns the underlying nexus connection of a service
 func (s *Service) GetConn() *NexusConn {
+	s.connLock.Lock()
+	defer s.connLock.Unlock()
 	if s.nc == nil {
 		return nil
 	}
 	return &NexusConn{NexusConn: s.nc}
 }
 
+func (s *Service) getConnid() string {
+	s.connLock.Lock()
+	defer s.connLock.Unlock()
+	return s.connId
+}
+
 func (s *Service) setConn(nc *nexus.NexusConn) {
+	s.connLock.Lock()
+	defer s.connLock.Unlock()
 	s.nc = nc
 	if nc != nil {
 		s.sharedConn = true
 		s.connId = s.nc.Id()
+	} else {
+		s.sharedConn = false
+		s.connId = ""
 	}
 }
 
@@ -509,6 +523,7 @@ func (s *Service) Serve() error {
 	if !s.sharedConn {
 		s.setState(StateConnecting)
 		// Dial
+		s.connLock.Lock()
 		s.nc, err = nxcli.Dial(s.Url, nxcli.NewDialOptions())
 		if err != nil {
 			if err == nxcli.ErrVersionIncompatible {
@@ -516,6 +531,7 @@ func (s *Service) Serve() error {
 			} else {
 				err = fmt.Errorf("can't connect to nexus server (%s): %s", s.Url, err.Error())
 				LogWithFields(ErrorLevel, "server", ei.M{"type": "connection_error"}, err.Error())
+				s.connLock.Unlock()
 				return err
 			}
 		}
@@ -527,8 +543,10 @@ func (s *Service) Serve() error {
 		if err != nil {
 			err = fmt.Errorf("can't login to nexus server (%s) as (%s): %s", s.Url, s.User, err.Error())
 			LogWithFields(ErrorLevel, "server", ei.M{"type": "login_error"}, err.Error())
+			s.connLock.Unlock()
 			return err
 		}
+		s.connLock.Unlock()
 	}
 	s.setState(StateServing)
 
@@ -782,8 +800,9 @@ func (s *Service) GetStats() *Stats {
 // Log allows to log from the service with the default format used by nxsugar
 func (s *Service) Log(level string, message string, args ...interface{}) {
 	fields := map[string]interface{}{}
-	if s.connId != "" {
-		fields["connid"] = s.connId
+	connid := s.getConnid()
+	if connid != "" {
+		fields["connid"] = connid
 	}
 	LogWithFields(level, s.Name, fields, message, args...)
 }
@@ -793,8 +812,9 @@ func (s *Service) LogWithFields(level string, fields map[string]interface{}, mes
 	if fields == nil {
 		fields = map[string]interface{}{}
 	}
-	if s.connId != "" {
-		fields["connid"] = s.connId
+	connid := s.getConnid()
+	if connid != "" {
+		fields["connid"] = connid
 	}
 	LogWithFields(level, s.Name, fields, message, args...)
 }
@@ -802,9 +822,9 @@ func (s *Service) LogWithFields(level string, fields map[string]interface{}, mes
 // String returns some service info as a stirng
 func (s *Service) String() string {
 	if s.sharedConn {
-		return fmt.Sprintf("config: url=%s user=%s connid=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.connId, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
+		return fmt.Sprintf("config: url=%s user=%s connid=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.getConnid(), s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
 	}
-	return fmt.Sprintf("config: url=%s user=%s connid=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.connId, s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
+	return fmt.Sprintf("config: url=%s user=%s connid=%s version=%s path=%s pulls=%d pullTimeout=%s maxThreads=%d logLevel=%s statsPeriod=%s gracefulExit=%s", s.Url, s.User, s.getConnid(), s.Version, s.Path, s.Pulls, s.PullTimeout.String(), s.MaxThreads, s.LogLevel, s.StatsPeriod.String(), s.GracefulExit.String())
 }
 
 func (s *Service) logMap() map[string]interface{} {
@@ -812,7 +832,7 @@ func (s *Service) logMap() map[string]interface{} {
 		"type":         "start",
 		"url":          s.Url,
 		"user":         s.User,
-		"connid":       s.connId,
+		"connid":       s.getConnid(),
 		"version":      s.Version,
 		"path":         s.Path,
 		"pulls":        s.Pulls,
