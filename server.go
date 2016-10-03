@@ -35,6 +35,7 @@ type Server struct {
 	nc           *nexus.NexusConn
 	services     map[string]*Service
 	wg           *sync.WaitGroup
+	connLock     sync.Mutex
 }
 
 /*
@@ -49,6 +50,8 @@ func NewServer(url string) *Server {
 
 // GetConn returns the underlying nexus connection of a server
 func (s *Server) GetConn() *NexusConn {
+	s.connLock.Lock()
+	defer s.connLock.Unlock()
 	if s.nc == nil {
 		return nil
 	}
@@ -193,6 +196,7 @@ func (s *Server) Serve() error {
 
 	s.setState(StateConnecting)
 	// Dial
+	s.connLock.Lock()
 	s.nc, err = nxcli.Dial(s.Url, nxcli.NewDialOptions())
 	if err != nil {
 		if err == nxcli.ErrVersionIncompatible {
@@ -200,6 +204,7 @@ func (s *Server) Serve() error {
 		} else {
 			err = fmt.Errorf("can't connect to nexus server (%s): %s", s.Url, err.Error())
 			LogWithFields(ErrorLevel, "server", ei.M{"type": "connection_error"}, err.Error())
+			s.connLock.Unlock()
 			return err
 		}
 	}
@@ -210,6 +215,7 @@ func (s *Server) Serve() error {
 	if err != nil {
 		err = fmt.Errorf("can't login to nexus server (%s) as (%s): %s", s.Url, s.User, err.Error())
 		LogWithFields(ErrorLevel, "server", ei.M{"type": "login_error"}, err.Error())
+		s.connLock.Unlock()
 		return err
 	}
 
@@ -218,6 +224,7 @@ func (s *Server) Serve() error {
 		svc.SetLogLevel(s.LogLevel)
 		svc.setConn(s.nc)
 	}
+	s.connLock.Unlock()
 
 	// Wait for signal
 	go func() {
