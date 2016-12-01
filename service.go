@@ -535,7 +535,6 @@ func (s *Service) Serve() error {
 				return err
 			}
 		}
-		s.connId = s.nc.Id()
 		s.setState(StateLoggingIn)
 
 		// Login
@@ -546,6 +545,7 @@ func (s *Service) Serve() error {
 			s.connLock.Unlock()
 			return err
 		}
+		s.connId = s.nc.Id()
 		s.connLock.Unlock()
 	}
 	s.setState(StateServing)
