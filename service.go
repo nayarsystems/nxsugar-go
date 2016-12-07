@@ -520,6 +520,11 @@ func (s *Service) Serve() error {
 		s.Version = "0.0.0"
 	}
 
+	// Allow to stop
+	s.stopServeCh = make(chan (bool), 1)
+	s.stopping = false
+	s.stopLock = &sync.Mutex{}
+
 	if !s.sharedConn {
 		s.setState(StateConnecting)
 		// Dial
@@ -535,7 +540,9 @@ func (s *Service) Serve() error {
 				return err
 			}
 		}
+		s.connLock.Unlock()
 		s.setState(StateLoggingIn)
+		s.connLock.Lock()
 
 		// Login
 		_, err = s.nc.Login(s.User, s.Pass)
@@ -554,11 +561,8 @@ func (s *Service) Serve() error {
 	s.LogWithFields(InfoLevel, s.logMap(), "%s", s)
 
 	// Serve
-	s.wg = &sync.WaitGroup{}
-	s.stopServeCh = make(chan (bool), 1)
 	s.stats = &Stats{}
-	s.stopping = false
-	s.stopLock = &sync.Mutex{}
+	s.wg = &sync.WaitGroup{}
 	if s.threadsSem == nil {
 		s.threadsSem = newSemaphore(s.MaxThreads)
 	}
