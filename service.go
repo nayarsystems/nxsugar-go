@@ -671,8 +671,8 @@ func (s *Service) taskPull(n int) {
 			}
 			if !s.isStopping() || !IsNexusErrCode(err, ErrConnClosed) { // An error ocurred (bypass if cancelled because service stop)
 				s.LogWithFields(ErrorLevel, ei.M{"type": "pull_error"}, "pull %d: pulling task: %s", n, err.Error())
+				s.nc.Close()
 			}
-			s.nc.Close()
 			s.threadsSem.Release()
 			return
 		}
