@@ -81,12 +81,22 @@ var connStateStr = map[NexusConnState]string{
 }
 
 type method struct {
-	inSchema  *methodSchema
-	resSchema *methodSchema
-	errSchema *methodSchema
-	pacts     []*methodPact
-	f         func(t *Task)
-	testf     func(t *Task)
+	disablePullLog          bool
+	enableResponseResultLog bool
+	enableResponseErrorLog  bool
+	inSchema                *methodSchema
+	resSchema               *methodSchema
+	errSchema               *methodSchema
+	pacts                   []*methodPact
+	f                       func(t *Task)
+	testf                   func(t *Task)
+}
+
+type MethodOpts struct {
+	TestFunction            func(*Task) (interface{}, *JsonRpcErr)
+	DisablePullLog          bool
+	EnableResponseResultLog bool
+	EnableResponseErrorLog  bool
 }
 
 /*
@@ -194,13 +204,13 @@ func (s *Service) setConn(nc *nexus.NexusConn) {
 	}
 }
 
-func (s *Service) addMethod(name string, schema *Schema, f func(*Task) (interface{}, *JsonRpcErr), testf func(*Task) (interface{}, *JsonRpcErr)) error {
+func (s *Service) addMethod(name string, schema *Schema, f func(*Task) (interface{}, *JsonRpcErr), opts *MethodOpts) error {
 	if s.methods == nil {
 		s.initMethods()
 	}
-	s.methods[name] = &method{f: defMethodWrapper(f), testf: nil, inSchema: nil, resSchema: nil, errSchema: nil, pacts: []*methodPact{}}
-	if testf != nil {
-		s.methods[name].testf = defMethodWrapper(testf)
+	s.methods[name] = &method{disablePullLog: opts.DisablePullLog, enableResponseResultLog: opts.EnableResponseResultLog, enableResponseErrorLog: opts.EnableResponseErrorLog, f: defMethodWrapper(f), testf: nil, inSchema: nil, resSchema: nil, errSchema: nil, pacts: []*methodPact{}}
+	if opts.TestFunction != nil {
+		s.methods[name].testf = defMethodWrapper(opts.TestFunction)
 	}
 	if schema != nil {
 		err, errM := s.addSchemaToMethod(name, schema)
@@ -330,15 +340,14 @@ func ReplyToWrapper(f func(*Task) (interface{}, *JsonRpcErr)) func(*Task) (inter
 
 /*
 AddMethod adds (or replaces if already added) a method for the service.
-If three arguments are provided, the third is a function used when calling the method in testing mode.
+If three arguments are provided, the third is a struct containing options for the method.
 The function that receives the nexus.Task should return a result or an error.
 */
-func (s *Service) AddMethod(name string, f func(*Task) (interface{}, *JsonRpcErr), testf ...func(*Task) (interface{}, *JsonRpcErr)) {
-	if len(testf) != 0 {
-		s.addMethod(name, nil, f, testf[0])
-	} else {
-		s.addMethod(name, nil, f, nil)
+func (s *Service) AddMethod(name string, f func(*Task) (interface{}, *JsonRpcErr), opts ...*MethodOpts) {
+	if len(opts) == 0 {
+		opts = []*MethodOpts{&MethodOpts{}}
 	}
+	s.addMethod(name, nil, f, opts[0])
 }
 
 /*
@@ -346,8 +355,19 @@ SetHandler sets the task handler for all methods, to allow custom parsing of the
 When a handler is set, methods added with AddMethod() have no effect.
 Passing a nil will remove the handler and turn back to methods from AddMethod().
 */
-func (s *Service) SetHandler(h func(*Task) (interface{}, *JsonRpcErr)) {
-	s.handler = &method{f: defMethodWrapper(h)}
+func (s *Service) SetHandler(h func(*Task) (interface{}, *JsonRpcErr), opts ...*MethodOpts) {
+	if h == nil {
+		s.handler = nil
+		return
+	}
+	if len(opts) == 0 {
+		opts = []*MethodOpts{&MethodOpts{}}
+	}
+	opt := opts[0]
+	s.handler = &method{disablePullLog: opt.DisablePullLog, enableResponseResultLog: opt.EnableResponseResultLog, enableResponseErrorLog: opt.EnableResponseErrorLog, f: defMethodWrapper(h)}
+	if opt.TestFunction != nil {
+		s.handler.testf = defMethodWrapper(opt.TestFunction)
+	}
 }
 
 // SetDescription modifies the service description
@@ -680,7 +700,6 @@ func (s *Service) taskPull(n int) {
 		// A task has been pulled
 		atomic.AddUint64(&s.stats.TasksPulled, 1)
 		wtask := &Task{*task}
-		s.LogWithFields(InfoLevel, ei.M{"type": "pull", "path": wtask.Path, "method": wtask.Method, "params": wtask.Params, "tags": wtask.Tags}, "pull %d: task[ path=%s method=%s params=%+v tags=%+v ]", n, wtask.Path, wtask.Method, wtask.Params, wtask.Tags)
 
 		// Get method or global handler
 		m := s.handler
@@ -693,6 +712,11 @@ func (s *Service) taskPull(n int) {
 				s.threadsSem.Release()
 				continue
 			}
+		}
+
+		// Log pull
+		if !m.disablePullLog {
+			s.LogWithFields(InfoLevel, ei.M{"type": "pull", "path": wtask.Path, "method": wtask.Method, "params": wtask.Params, "tags": wtask.Tags}, "pull %d: task[ path=%s method=%s params=%+v tags=%+v ]", n, wtask.Path, wtask.Method, wtask.Params, wtask.Tags)
 		}
 
 		// Execute the task
@@ -761,6 +785,14 @@ func (s *Service) taskPull(n int) {
 				}
 			} else {
 				m.f(wtask)
+			}
+
+			// Log response
+			if m.enableResponseResultLog && wtask.Tags["@local-response-result"] != nil {
+				s.LogWithFields(InfoLevel, ei.M{"type": "response_result", "path": wtask.Path, "method": wtask.Method}, "pull %d: task[ path=%s method=%s result=%+v ]", n, wtask.Path, wtask.Method, wtask.Tags["@local-response-result"])
+			}
+			if m.enableResponseErrorLog && wtask.Tags["@local-response-error"] != nil {
+				s.LogWithFields(InfoLevel, ei.M{"type": "response_error", "path": wtask.Path, "method": wtask.Method}, "pull %d: task[ path=%s method=%s error=%+v ]", n, wtask.Path, wtask.Method, wtask.Tags["@local-response-error"])
 			}
 
 			// Validate result schema

@@ -36,15 +36,14 @@ type methodPact struct {
 /*
 AddMethodSchema adds (or replaces if already added) a method for the service with a JSON schema.
 The function that receives the nexus.Task should return a result or an error.
-If four arguments are provided, the fourth is a function used when calling the method in testing mode.
+If four arguments are provided, the fourth is a struct containing method options.
 If the schema validation does not succeed, an ErrInvalidParams error will be sent as a result for the task.
 */
-func (s *Service) AddMethodSchema(name string, schema *Schema, f func(*Task) (interface{}, *JsonRpcErr), testf ...func(*Task) (interface{}, *JsonRpcErr)) error {
-	if len(testf) != 0 {
-		return s.addMethod(name, schema, f, testf[0])
-	} else {
-		return s.addMethod(name, schema, f, nil)
+func (s *Service) AddMethodSchema(name string, schema *Schema, f func(*Task) (interface{}, *JsonRpcErr), opts ...*MethodOpts) error {
+	if len(opts) == 0 {
+		opts = []*MethodOpts{&MethodOpts{}}
 	}
+	return s.addMethod(name, schema, f, opts[0])
 }
 
 func (s *Service) addSchemaToMethod(name string, schema *Schema) (error, map[string]interface{}) {
