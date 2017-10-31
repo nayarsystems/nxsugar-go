@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"sync"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -21,7 +23,13 @@ const (
 	DebugLevel = "debug"
 )
 
+var logLock *sync.Mutex
+
 type customFormatter struct {
+}
+
+func init() {
+	logLock = &sync.Mutex{}
 }
 
 func (f *customFormatter) Format(entry *logrus.Entry) ([]byte, error) {
@@ -31,6 +39,7 @@ func (f *customFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 
 // SetProductionMode sets the log level to JSON format
 func SetJSONOutput(enabled bool) {
+	logLock.Lock()
 	if enabled {
 		log = logrus.New()
 		jsonFmt := new(logrus.JSONFormatter)
@@ -41,10 +50,12 @@ func SetJSONOutput(enabled bool) {
 		log.Formatter = new(customFormatter)
 		log.Level = logrus.DebugLevel
 	}
+	logLock.Unlock()
 }
 
 // SetLogLevel sets the log level to one of (debug, info, warn, error, fatal, panic)
 func SetLogLevel(level string) {
+	logLock.Lock()
 	switch strings.ToLower(level) {
 	case PanicLevel:
 		log.Level = logrus.PanicLevel
@@ -59,6 +70,7 @@ func SetLogLevel(level string) {
 	default:
 		log.Level = logrus.DebugLevel
 	}
+	logLock.Unlock()
 }
 
 // GetLogLevel returns the current log level
