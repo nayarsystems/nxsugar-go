@@ -75,6 +75,8 @@ func SetLogLevel(level string) {
 
 // GetLogLevel returns the current log level
 func GetLogLevel() string {
+	logLock.Lock()
+	defer logLock.Unlock()
 	switch log.Level {
 	case logrus.PanicLevel:
 		return PanicLevel
@@ -99,6 +101,8 @@ func Log(level string, path string, message string, args ...interface{}) {
 
 // LogWithFields
 func LogWithFields(level string, path string, fields map[string]interface{}, message string, args ...interface{}) {
+	logLock.Lock()
+	defer logLock.Unlock()
 	le := log.WithField("path", path).WithField("data", fields)
 	switch strings.ToLower(level) {
 	case PanicLevel:
