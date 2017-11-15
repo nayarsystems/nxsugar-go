@@ -318,7 +318,7 @@ func (s *ServerFromConfig) AddService(name string) (*Service, error) {
 	if svcfg.Version == "" {
 		svcfg.Version = configServer.Version
 	}
-	svc := &Service{Name: name, Url: s.Url, User: s.User, Pass: s.Pass, Path: svcfg.Path, Pulls: svcfg.Pulls, PullTimeout: time.Duration(svcfg.PullTimeout * float64(time.Second)), MaxThreads: svcfg.MaxThreads, LogLevel: s.LogLevel, StatsPeriod: s.StatsPeriod, GracefulExit: s.GracefulExit, Testing: s.Testing, Version: svcfg.Version}
+	svc := &Service{Name: name, Description: svcfg.Description, Url: s.Url, User: s.User, Pass: s.Pass, Path: svcfg.Path, Pulls: svcfg.Pulls, PullTimeout: time.Duration(svcfg.PullTimeout * float64(time.Second)), MaxThreads: svcfg.MaxThreads, StatsPeriod: s.StatsPeriod, GracefulExit: s.GracefulExit, LogLevel: s.LogLevel, Version: svcfg.Version, Testing: s.Testing}
 	s.services[name] = svc
 	return svc, nil
 }
