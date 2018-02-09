@@ -324,6 +324,32 @@ func (s *ServerFromConfig) AddService(name string) (*Service, error) {
 }
 
 /*
+AddServices adds several services to a ServerFromConfig
+If another service was previously added with the same name it will be replaced
+*/
+func (s *ServerFromConfig) AddServices(services map[string][]Method) (addedServices map[string]*Service, err error) {
+	addedServices = make(map[string]*Service)
+
+	for name, methods := range services {
+		service, err := s.AddService(name)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, method := range methods {
+			if method.Opts == nil {
+				method.Opts = &MethodOpts{}
+			}
+			service.AddMethodSchema(method.Name, method.Schema, method.Func, method.Opts)
+		}
+
+		addedServices[name] = service
+	}
+
+	return addedServices, nil
+}
+
+/*
 NewServiceFromConfig returns a new nexus service from the configuration file or any error while parsing it (with the format of InvalidConfigErr and MissingConfigErr).
 If the config has not been previously parsed `NewServiceFromConfig` parses it.
 */

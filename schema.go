@@ -9,6 +9,13 @@ import (
 	"github.com/xeipuuv/gojsonschema"
 )
 
+type Method struct {
+	Name   string
+	Func   func(*Task) (interface{}, *JsonRpcErr)
+	Schema *Schema
+	Opts   *MethodOpts
+}
+
 type Schema struct {
 	FromFile string
 	Input    string
