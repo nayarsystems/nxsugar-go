@@ -293,7 +293,11 @@ func defMethodWrapper(f func(*Task) (interface{}, *JsonRpcErr)) func(*Task) {
 		if err != nil {
 			t.SendError(err.Cod, err.Mess, err.Dat)
 		} else {
-			t.SendResult(res)
+			_, err := t.SendResult(res)
+			if err != nil {
+				Log(ErrorLevel, "method wrapper", "Could not send result: %s", err)
+				t.SendError(ErrInternal, "could not send result", nil)
+			}
 		}
 	}
 }
