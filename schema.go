@@ -3,6 +3,7 @@ package nxsugar
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	"github.com/jaracil/ei"
@@ -41,6 +42,39 @@ type methodPact struct {
 }
 
 /*
+AddSharedSchema adds a schema with an id that can be referenced by method schemas
+*/
+func (s *Service) AddSharedSchema(id string, schema string) error {
+	return s.addSharedSchema(id, schema)
+}
+
+/*
+AddSharedSchemaFromFile adds a schema from file with an id that can be referenced by method schemas
+*/
+func (s *Service) AddSharedSchemaFromFile(id string, file string) error {
+	contents, err := ioutil.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("error adding shared jsonschema (%s) from file (%s): %s", id, file, err.Error())
+	}
+	return s.addSharedSchema(id, string(contents))
+}
+
+func (s *Service) addSharedSchema(id string, schema string) error {
+	if s.sharedSchemas == nil {
+		s.sharedSchemas = map[string]gojsonschema.JSONLoader{}
+	}
+	if _, ok := s.sharedSchemas[id]; ok {
+		return fmt.Errorf("An schema with given id already exists")
+	}
+	loader, err := getSchemaLoaderFromJson(schema)
+	if err != nil {
+		return fmt.Errorf("Error with the schema: %s", err.Error())
+	}
+	s.sharedSchemas[id] = loader
+	return nil
+}
+
+/*
 AddMethodSchema adds (or replaces if already added) a method for the service with a JSON schema.
 The function that receives the nexus.Task should return a result or an error.
 If four arguments are provided, the fourth is a struct containing method options.
@@ -66,21 +100,21 @@ func (s *Service) addSchemaToMethod(name string, schema *Schema) (error, map[str
 			return fmt.Errorf("error adding method (%s) jsonschema from file: %s", name, err.Error()), ei.M{"type": "schema_file"}
 		}
 		if input, ok := newSch["input"]; ok {
-			src, _, validator, err := compileSchema("", input)
+			src, _, validator, err := compileSchema("", input, s.sharedSchemas)
 			if err != nil {
 				return fmt.Errorf("error adding method (%s) input jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
 			s.methods[name].inSchema = &methodSchema{source: src, json: input, validator: validator}
 		}
 		if result, ok := newSch["result"]; ok {
-			src, _, validator, err := compileSchema("", result)
+			src, _, validator, err := compileSchema("", result, s.sharedSchemas)
 			if err != nil {
 				return fmt.Errorf("error adding method (%s) result jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
 			s.methods[name].resSchema = &methodSchema{source: src, json: result, validator: validator}
 		}
 		if errs, ok := newSch["error"]; ok {
-			src, _, validator, err := compileSchema("", errs)
+			src, _, validator, err := compileSchema("", errs, s.sharedSchemas)
 			if err != nil {
 				return fmt.Errorf("error adding method (%s) error jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
@@ -113,21 +147,21 @@ func (s *Service) addSchemaToMethod(name string, schema *Schema) (error, map[str
 	// Add schema from string
 	if schema.Input != "" || schema.Result != "" || schema.Error != "" {
 		if schema.Input != "" {
-			_, sch, validator, err := compileSchemaFromJson(schema.Input)
+			_, sch, validator, err := compileSchemaFromJson(schema.Input, s.sharedSchemas)
 			if err != nil {
 				return fmt.Errorf("error adding method (%s) input jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
 			s.methods[name].inSchema = &methodSchema{source: schema.Input, json: sch, validator: validator}
 		}
 		if schema.Result != "" {
-			_, sch, validator, err := compileSchemaFromJson(schema.Result)
+			_, sch, validator, err := compileSchemaFromJson(schema.Result, s.sharedSchemas)
 			if err != nil {
 				return fmt.Errorf("error adding method (%s) result jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
 			s.methods[name].resSchema = &methodSchema{source: schema.Result, json: sch, validator: validator}
 		}
 		if schema.Error != "" {
-			_, sch, validator, err := compileSchemaFromJson(schema.Error)
+			_, sch, validator, err := compileSchemaFromJson(schema.Error, s.sharedSchemas)
 			if err != nil {
 				return fmt.Errorf("error adding method (%s) error jsonschema: %s", name, err.Error()), ei.M{"type": "adding_schema"}
 			}
@@ -151,17 +185,39 @@ func (s *Service) addSchemaToMethod(name string, schema *Schema) (error, map[str
 	return nil, nil
 }
 
-func compileSchemaFromJson(source string) (string, interface{}, *gojsonschema.Schema, error) {
+func getSchemaLoaderFromJson(source string) (gojsonschema.JSONLoader, error) {
+	var schres interface{}
+	err := json.Unmarshal([]byte(source), &schres)
+	if err != nil {
+		return nil, fmt.Errorf("parsing json: %s", err.Error())
+	}
+	return getSchemaLoader(schres), nil
+}
+
+func getSchemaLoader(d interface{}) gojsonschema.JSONLoader {
+	return gojsonschema.NewGoLoader(d)
+}
+
+func compileSchemaFromJson(source string, shared map[string]gojsonschema.JSONLoader) (string, interface{}, *gojsonschema.Schema, error) {
 	var schres interface{}
 	err := json.Unmarshal([]byte(source), &schres)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("parsing json: %s", err.Error())
 	}
-	return compileSchema(source, schres)
+	return compileSchema(source, schres, shared)
 }
 
-func compileSchema(source string, d interface{}) (string, interface{}, *gojsonschema.Schema, error) {
-	validator, err := gojsonschema.NewSchema(gojsonschema.NewGoLoader(d))
+func compileSchema(source string, d interface{}, shared map[string]gojsonschema.JSONLoader) (string, interface{}, *gojsonschema.Schema, error) {
+	schemaLoader := gojsonschema.NewSchemaLoader()
+	if shared != nil {
+		for id, sch := range shared {
+			err := schemaLoader.AddSchema(id, sch)
+			if err != nil {
+				return "", nil, nil, fmt.Errorf("invalid: adding shared schema %s: %s", id, err.Error())
+			}
+		}
+	}
+	validator, err := schemaLoader.Compile(gojsonschema.NewGoLoader(d))
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("invalid: %s", err.Error())
 	}
