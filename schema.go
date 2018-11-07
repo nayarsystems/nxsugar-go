@@ -42,14 +42,14 @@ type methodPact struct {
 }
 
 /*
-AddSharedSchema adds a schema with an id that can be referenced by method schemas
+AddSharedSchema adds a schema with an id that can be referenced by method schemas (this schema can be referenced from others with: `{"$ref":"shared://id"}`)
 */
 func (s *Service) AddSharedSchema(id string, schema string) error {
 	return s.addSharedSchema(id, schema)
 }
 
 /*
-AddSharedSchemaFromFile adds a schema from file with an id that can be referenced by method schemas
+AddSharedSchemaFromFile adds a schema from file with an id that can be referenced by method schemas (this schema can be referenced from others with: `{"$ref":"shared://id"}`)
 */
 func (s *Service) AddSharedSchemaFromFile(id string, file string) error {
 	contents, err := ioutil.ReadFile(file)
@@ -211,7 +211,7 @@ func compileSchema(source string, d interface{}, shared map[string]gojsonschema.
 	schemaLoader := gojsonschema.NewSchemaLoader()
 	if shared != nil {
 		for id, sch := range shared {
-			err := schemaLoader.AddSchema(id, sch)
+			err := schemaLoader.AddSchema("shared://"+id, sch)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf("invalid: adding shared schema %s: %s", id, err.Error())
 			}
