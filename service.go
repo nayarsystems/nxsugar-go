@@ -229,12 +229,13 @@ func (s *Service) initMethods() {
 	// Add @schema method
 	s.methods["@schema"] = &method{
 		f: func(t *Task) {
-			r := map[string]interface{}{}
+			methods := map[string]interface{}{}
 			for name, m := range s.methods {
 				d := map[string]interface{}{}
 				if m.inSchema != nil || m.resSchema != nil || m.errSchema != nil {
 					if m.inSchema != nil {
-						d["input"] = m.inSchema.json
+						m.inSchema.validator.
+							d["input"] = m.inSchema.json
 					}
 					if m.resSchema != nil {
 						d["result"] = m.resSchema.json
@@ -246,9 +247,16 @@ func (s *Service) initMethods() {
 						d["pacts"] = m.pacts
 					}
 				}
-				r[name] = d
+				methods[name] = d
 			}
-			t.SendResult(r)
+			shared := map[string]interface{}{}
+			for name, s := range s.sharedSchemas {
+				shared["name"] = s.JsonSource()
+			}
+			t.SendResult(ei.M{
+				"methods": methods,
+				"shared":  shared,
+			})
 		},
 	}
 
