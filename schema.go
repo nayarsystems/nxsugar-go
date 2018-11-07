@@ -42,19 +42,21 @@ type methodPact struct {
 }
 
 /*
-AddSharedSchema adds a schema with an id that can be referenced by method schemas (this schema can be referenced from others with: `{"$ref":"shared://id"}`)
+AddSharedSchema adds a schema with an id that can be referenced by method schemas (this schema can be referenced from others with: `{"$ref":"http://nexus.service/id"}`)
 */
 func (s *Service) AddSharedSchema(id string, schema string) error {
 	return s.addSharedSchema(id, schema)
 }
 
 /*
-AddSharedSchemaFromFile adds a schema from file with an id that can be referenced by method schemas (this schema can be referenced from others with: `{"$ref":"shared://id"}`)
+AddSharedSchemaFromFile adds a schema from file with an id that can be referenced by method schemas (this schema can be referenced from others with: `{"$ref":"http://nexus.service/id"}`)
 */
 func (s *Service) AddSharedSchemaFromFile(id string, file string) error {
 	contents, err := ioutil.ReadFile(file)
 	if err != nil {
-		return fmt.Errorf("error adding shared jsonschema (%s) from file (%s): %s", id, file, err.Error())
+		err = fmt.Errorf("error adding shared jsonschema (%s) from file (%s): %s", id, file, err.Error())
+		s.LogWithFields(ErrorLevel, ei.M{"type": "shared_file"}, err.Error())
+		return err
 	}
 	return s.addSharedSchema(id, string(contents))
 }
@@ -64,11 +66,15 @@ func (s *Service) addSharedSchema(id string, schema string) error {
 		s.sharedSchemas = map[string]gojsonschema.JSONLoader{}
 	}
 	if _, ok := s.sharedSchemas[id]; ok {
-		return fmt.Errorf("An schema with given id already exists")
+		err := fmt.Errorf("error adding shared jsonschema (%s): an schema with given id already exists", id)
+		s.LogWithFields(ErrorLevel, ei.M{"type": "adding_shared"}, err.Error())
+		return err
 	}
 	loader, err := getSchemaLoaderFromJson(schema)
 	if err != nil {
-		return fmt.Errorf("Error with the schema: %s", err.Error())
+		err = fmt.Errorf("error adding shared jsonschema (%s): %s", id, err.Error())
+		s.LogWithFields(ErrorLevel, ei.M{"type": "adding_shared"}, err.Error())
+		return err
 	}
 	s.sharedSchemas[id] = loader
 	return nil
@@ -211,7 +217,7 @@ func compileSchema(source string, d interface{}, shared map[string]gojsonschema.
 	schemaLoader := gojsonschema.NewSchemaLoader()
 	if shared != nil {
 		for id, sch := range shared {
-			err := schemaLoader.AddSchema("shared://"+id, sch)
+			err := schemaLoader.AddSchema("http://nexus.service/"+id, sch)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf("invalid: adding shared schema %s: %s", id, err.Error())
 			}
