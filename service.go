@@ -28,34 +28,35 @@ Multiple methods or a handler can be added to it with calls to `AddMethod()` or 
 Once it is configured and its methods added, a call to `Serve()` will start the service.
 */
 type Service struct {
-	Name         string
-	Description  string
-	Url          string
-	User         string
-	Pass         string
-	Path         string
-	Pulls        int
-	PullTimeout  time.Duration
-	MaxThreads   int
-	StatsPeriod  time.Duration
-	GracefulExit time.Duration
-	LogLevel     string
-	Version      string
-	Testing      bool
-	ConnState    func(*NexusConn, NexusConnState)
-	nc           *nexus.NexusConn
-	methods      map[string]*method
-	handler      *method
-	stats        *Stats
-	stopServeCh  chan (bool)
-	threadsSem   *semaphore
-	wg           *sync.WaitGroup
-	stopping     bool
-	stopLock     *sync.Mutex
-	debugEnabled bool
-	sharedConn   bool
-	connId       string
-	connLock     sync.Mutex
+	Name          string
+	Description   string
+	Url           string
+	User          string
+	Pass          string
+	Path          string
+	Pulls         int
+	PullTimeout   time.Duration
+	MaxThreads    int
+	StatsPeriod   time.Duration
+	GracefulExit  time.Duration
+	LogLevel      string
+	Version       string
+	Testing       bool
+	ConnState     func(*NexusConn, NexusConnState)
+	nc            *nexus.NexusConn
+	methods       map[string]*method
+	handler       *method
+	sharedSchemas map[string]gojsonschema.JSONLoader
+	stats         *Stats
+	stopServeCh   chan (bool)
+	threadsSem    *semaphore
+	wg            *sync.WaitGroup
+	stopping      bool
+	stopLock      *sync.Mutex
+	debugEnabled  bool
+	sharedConn    bool
+	connId        string
+	connLock      sync.Mutex
 }
 
 type NexusConnState int
@@ -293,7 +294,11 @@ func defMethodWrapper(f func(*Task) (interface{}, *JsonRpcErr)) func(*Task) {
 		if err != nil {
 			t.SendError(err.Cod, err.Mess, err.Dat)
 		} else {
-			t.SendResult(res)
+			_, err := t.SendResult(res)
+			if err != nil {
+				Log(ErrorLevel, "method wrapper", "Could not send result: %s", err)
+				t.SendError(ErrInternal, "could not send result", nil)
+			}
 		}
 	}
 }
