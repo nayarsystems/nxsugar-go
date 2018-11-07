@@ -234,8 +234,7 @@ func (s *Service) initMethods() {
 				d := map[string]interface{}{}
 				if m.inSchema != nil || m.resSchema != nil || m.errSchema != nil {
 					if m.inSchema != nil {
-						m.inSchema.validator.
-							d["input"] = m.inSchema.json
+						d["input"] = m.inSchema.json
 					}
 					if m.resSchema != nil {
 						d["result"] = m.resSchema.json
@@ -251,7 +250,7 @@ func (s *Service) initMethods() {
 			}
 			shared := map[string]interface{}{}
 			for name, s := range s.sharedSchemas {
-				shared["name"] = s.JsonSource()
+				shared[name] = s.JsonSource()
 			}
 			t.SendResult(ei.M{
 				"methods": methods,
