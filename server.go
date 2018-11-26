@@ -2,6 +2,7 @@ package nxsugar
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"os"
 	"os/signal"
@@ -11,6 +12,7 @@ import (
 	"github.com/jaracil/ei"
 	nxcli "github.com/nayarsystems/nxgo"
 	nexus "github.com/nayarsystems/nxgo/nxcore"
+	"github.com/xeipuuv/gojsonschema"
 )
 
 /*
@@ -20,22 +22,23 @@ Its configuration can be changed with calls to `Set...()`.
 After it has been configured, services can be added with calls to `AddService()`, the server configuration will be used as default configuration for the service.
 */
 type Server struct {
-	Url          string
-	User         string
-	Pass         string
-	Pulls        int
-	PullTimeout  time.Duration
-	MaxThreads   int
-	StatsPeriod  time.Duration
-	GracefulExit time.Duration
-	LogLevel     string
-	Testing      bool
-	Version      string
-	ConnState    func(*NexusConn, NexusConnState)
-	nc           *nexus.NexusConn
-	services     map[string]*Service
-	wg           *sync.WaitGroup
-	connLock     sync.Mutex
+	Url           string
+	User          string
+	Pass          string
+	Pulls         int
+	PullTimeout   time.Duration
+	MaxThreads    int
+	StatsPeriod   time.Duration
+	GracefulExit  time.Duration
+	LogLevel      string
+	Testing       bool
+	Version       string
+	ConnState     func(*NexusConn, NexusConnState)
+	nc            *nexus.NexusConn
+	sharedSchemas map[string]gojsonschema.JSONLoader
+	services      map[string]*Service
+	wg            *sync.WaitGroup
+	connLock      sync.Mutex
 }
 
 /*
@@ -142,6 +145,45 @@ func (s *Server) IsTesting() bool {
 }
 
 /*
+AddSharedSchema adds a schema with an id that can be referenced by method schemas (this schema can be referenced from others with: `{"$ref":"http://nexus.service/id"}`)
+*/
+func (s *Server) AddSharedSchema(id string, schema string) error {
+	return s.addSharedSchema(id, schema)
+}
+
+/*
+AddSharedSchemaFromFile adds a schema from file with an id that can be referenced by method schemas (this schema can be referenced from others with: `{"$ref":"http://nexus.service/id"}`)
+*/
+func (s *Server) AddSharedSchemaFromFile(id string, file string) error {
+	contents, err := ioutil.ReadFile(file)
+	if err != nil {
+		err = fmt.Errorf("error adding shared jsonschema (%s) from file (%s): %s", id, file, err.Error())
+		LogWithFields(ErrorLevel, "server", ei.M{"type": "shared_file"}, err.Error())
+		return err
+	}
+	return s.addSharedSchema(id, string(contents))
+}
+
+func (s *Server) addSharedSchema(id string, schema string) error {
+	if s.sharedSchemas == nil {
+		s.sharedSchemas = map[string]gojsonschema.JSONLoader{}
+	}
+	if _, ok := s.sharedSchemas[id]; ok {
+		err := fmt.Errorf("error adding shared jsonschema (%s): an schema with given id already exists", id)
+		LogWithFields(ErrorLevel, "server", ei.M{"type": "adding_shared"}, err.Error())
+		return err
+	}
+	loader, err := getSchemaLoaderFromJson(schema)
+	if err != nil {
+		err = fmt.Errorf("error adding shared jsonschema (%s): %s", id, err.Error())
+		LogWithFields(ErrorLevel, "server", ei.M{"type": "adding_shared"}, err.Error())
+		return err
+	}
+	s.sharedSchemas[id] = loader
+	return nil
+}
+
+/*
 AddService adds a service to a server created with `NewServer()` by name.
 If another service was previously added with the same name it will be replaced.
 If opts are passed, its values will be used for the service. If not, default values will be used.
@@ -150,7 +192,7 @@ func (s *Server) AddService(name string, path string, opts *ServiceOpts) *Servic
 	if s.services == nil {
 		s.services = map[string]*Service{}
 	}
-	svc := &Service{Name: name, Url: s.Url, User: s.User, Pass: s.Pass, Path: path, Pulls: s.Pulls, PullTimeout: s.PullTimeout, MaxThreads: s.MaxThreads, LogLevel: s.LogLevel, StatsPeriod: s.StatsPeriod, GracefulExit: s.GracefulExit, Testing: s.Testing}
+	svc := &Service{Name: name, Url: s.Url, User: s.User, Pass: s.Pass, Path: path, Pulls: s.Pulls, PullTimeout: s.PullTimeout, MaxThreads: s.MaxThreads, LogLevel: s.LogLevel, StatsPeriod: s.StatsPeriod, GracefulExit: s.GracefulExit, Testing: s.Testing, sharedSchemas: s.sharedSchemas}
 	if opts != nil {
 		opts = populateOpts(opts)
 		svc.Pulls = opts.Pulls
