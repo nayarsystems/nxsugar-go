@@ -252,17 +252,21 @@ func (s *Service) initMethods() {
 			for name, s := range s.sharedSchemas {
 				shared[name] = s.JsonSource()
 			}
-			t.SendResult(ei.M{
+			_, err := t.SendResult(ei.M{
 				"methods": methods,
 				"shared":  shared,
 			})
+			if err != nil {
+				Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", t.Path, t.Method), "Could not send result: %s", err.Error())
+				t.SendError(ErrInternal, "could not send result", nil)
+			}
 		},
 	}
 
 	// Add @info method
 	s.methods["@info"] = &method{
 		f: func(t *Task) {
-			t.SendResult(ei.M{
+			_, err := t.SendResult(ei.M{
 				"name":          s.Name,
 				"description":   s.Description,
 				"version":       s.Version,
@@ -275,13 +279,21 @@ func (s *Service) initMethods() {
 				"testing":       s.IsTesting(),
 				"stats":         *s.stats,
 			})
+			if err != nil {
+				Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", t.Path, t.Method), "Could not send result: %s", err.Error())
+				t.SendError(ErrInternal, "could not send result", nil)
+			}
 		},
 	}
 
 	// Add @ping method
 	s.methods["@ping"] = &method{
 		f: func(t *Task) {
-			t.SendResult("pong")
+			_, err := t.SendResult("pong")
+			if err != nil {
+				Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", t.Path, t.Method), "Could not send result: %s", err.Error())
+				t.SendError(ErrInternal, "could not send result", nil)
+			}
 		},
 	}
 }
@@ -299,11 +311,14 @@ func defMethodWrapper(f func(*Task) (interface{}, *JsonRpcErr)) func(*Task) {
 			return
 		}
 		if err != nil {
-			t.SendError(err.Cod, err.Mess, err.Dat)
+			_, serr := t.SendError(err.Cod, err.Mess, err.Dat)
+			if serr != nil {
+				Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", t.Path, t.Method), "Could not send error: %s", serr.Error())
+			}
 		} else {
-			_, err := t.SendResult(res)
-			if err != nil {
-				Log(ErrorLevel, "method wrapper", "Could not send result: %s", err)
+			_, serr := t.SendResult(res)
+			if serr != nil {
+				Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", t.Path, t.Method), "Could not send result: %s", serr.Error())
 				t.SendError(ErrInternal, "could not send result", nil)
 			}
 		}
@@ -719,7 +734,10 @@ func (s *Service) taskPull(n int) {
 			var ok bool
 			m, ok = s.methods[wtask.Method]
 			if !ok { // Method not found
-				wtask.SendError(ErrMethodNotFound, "", nil)
+				_, err = wtask.SendError(ErrMethodNotFound, "", nil)
+				if err != nil {
+					Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+				}
 				atomic.AddUint64(&s.stats.TasksMethodNotFound, 1)
 				s.threadsSem.Release()
 				continue
@@ -749,7 +767,10 @@ func (s *Service) taskPull(n int) {
 					}
 					stck := debug.Stack()
 					s.LogWithFields(ErrorLevel, ei.M{"type": "task_exception"}, "pull %d: panic serving task: %s: %s", n, nerr.Error(), stck)
-					wtask.SendError(ErrInternal, fmt.Sprintf("%s: %s", nerr.Error(), stck), nil)
+					_, err = wtask.SendError(ErrInternal, fmt.Sprintf("%s: %s", nerr.Error(), stck), nil)
+					if err != nil {
+						Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+					}
 				}
 			}()
 
@@ -760,13 +781,19 @@ func (s *Service) taskPull(n int) {
 					if pactm, err := ei.N(pact.input).MapStr(); err == nil {
 						pactm["@metadata"] = metadata
 						if reflect.DeepEqual(pactm, wtask.Params) {
-							wtask.SendResult(pact.output)
+							_, err = wtask.SendResult(pact.output)
+							if err != nil {
+								Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+							}
 							atomic.AddUint64(&s.stats.TasksServed, 1)
 							return
 						}
 					}
 				}
-				wtask.SendError(ErrPactNotDefined, ErrStr[ErrPactNotDefined], nil)
+				_, err = wtask.SendError(ErrPactNotDefined, ErrStr[ErrPactNotDefined], nil)
+				if err != nil {
+					Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+				}
 				atomic.AddUint64(&s.stats.TasksServed, 1)
 				return
 			}
@@ -775,12 +802,18 @@ func (s *Service) taskPull(n int) {
 			if m.inSchema != nil {
 				result, err := m.inSchema.validator.Validate(gojsonschema.NewGoLoader(wtask.Params))
 				if err != nil { // Error with schemas
-					wtask.SendError(ErrInvalidParams, fmt.Sprintf("jsonschema validation failed: %s", err.Error()), nil)
+					_, err = wtask.SendError(ErrInvalidParams, fmt.Sprintf("jsonschema validation failed: %s", err.Error()), nil)
+					if err != nil {
+						Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+					}
 					atomic.AddUint64(&s.stats.TasksServed, 1)
 					return
 				} else if !result.Valid() { // Schema validation error
 					out := fmt.Sprintf("jsonschema validation failed: %s", schemaValidationErr(result))
-					wtask.SendError(ErrInvalidParams, out, nil)
+					_, err = wtask.SendError(ErrInvalidParams, out, nil)
+					if err != nil {
+						Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+					}
 					atomic.AddUint64(&s.stats.TasksServed, 1)
 					return
 				}
@@ -789,7 +822,10 @@ func (s *Service) taskPull(n int) {
 			// Execute the task
 			if ei.N(wtask.Params).M("@metadata").M("testing").BoolZ() {
 				if m.testf == nil {
-					wtask.SendError(ErrTestingMethodNotProvided, ErrStr[ErrTestingMethodNotProvided], nil)
+					_, err = wtask.SendError(ErrTestingMethodNotProvided, ErrStr[ErrTestingMethodNotProvided], nil)
+					if err != nil {
+						Log(ErrorLevel, fmt.Sprintf("method wrapper: %s.%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+					}
 					atomic.AddUint64(&s.stats.TasksServed, 1)
 					return
 				} else {
