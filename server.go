@@ -310,3 +310,17 @@ func (s *Server) Serve() error {
 	}
 	return serveErr
 }
+
+// GracefulStop stops the server with its services gracefully
+func (s *Server) GracefulStop() {
+	for _, svc := range s.services {
+		svc.GracefulStop()
+	}
+}
+
+// Stop stops the server with its services
+func (s *Server) Stop() {
+	for _, svc := range s.services {
+		svc.Stop()
+	}
+}
