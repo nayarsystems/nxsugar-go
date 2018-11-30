@@ -94,8 +94,10 @@ func parseConfig() (error, map[string]interface{}) {
 		if err != nil {
 			return fmt.Errorf(InvalidConfigErr, "server", "must be map"), ei.M{"type": "invalid_param"}
 		}
-		if configServer.Name, err = ei.N(server).M("name").String(); err != nil {
-			return fmt.Errorf(InvalidConfigErr, "server.name", "must be string"), ei.M{"type": "invalid_param"}
+		if name, ok := server["name"]; ok {
+			if configServer.Name, err = ei.N(name).String(); err != nil {
+				return fmt.Errorf(InvalidConfigErr, "server.name", "must be string"), ei.M{"type": "invalid_param"}
+			}
 		}
 		if _, ok := server["url"]; !ok {
 			return fmt.Errorf(MissingConfigErr, "server.url"), ei.M{"type": "missing_param"}
@@ -348,7 +350,9 @@ func (s *ServerFromConfig) AddServices(services map[string][]Method) (addedServi
 			if method.Opts == nil {
 				method.Opts = &MethodOpts{}
 			}
-			service.AddMethodSchema(method.Name, method.Schema, method.Func, method.Opts)
+			if err = service.AddMethodSchema(method.Name, method.Schema, method.Func, method.Opts); err != nil {
+				return nil, err
+			}
 		}
 
 		addedServices[name] = service

@@ -840,7 +840,7 @@ func (s *Service) taskPull(n int) {
 				s.LogWithFields(InfoLevel, ei.M{"type": "response_result", "path": wtask.Path, "method": wtask.Method, "user": wtask.User, "params": wtask.Params, "result": wtask.Tags["@local-response-result"]}, "pull %d: task[ path=%s method=%s user=%s result=%+v ]", n, wtask.Path, wtask.Method, wtask.User, wtask.Tags["@local-response-result"])
 			}
 			if m.enableResponseErrorLog && wtask.Tags["@local-response-error"] != nil {
-				s.LogWithFields(InfoLevel, ei.M{"type": "response_error", "path": wtask.Path, "method": wtask.Method, "user": wtask.User, "params": wtask.Params, "error": wtask.Tags["@local-response-error"]}, "pull %d: task[ path=%s method=%s user=%S error=%+v ]", n, wtask.Path, wtask.Method, wtask.User, wtask.Tags["@local-response-error"])
+				s.LogWithFields(InfoLevel, ei.M{"type": "response_error", "path": wtask.Path, "method": wtask.Method, "user": wtask.User, "params": wtask.Params, "error": wtask.Tags["@local-response-error"]}, "pull %d: task[ path=%s method=%s user=%s error=%+v ]", n, wtask.Path, wtask.Method, wtask.User, wtask.Tags["@local-response-error"])
 			}
 
 			// Validate result schema
