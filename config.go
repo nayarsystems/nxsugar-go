@@ -340,7 +340,9 @@ func (s *ServerFromConfig) AddServices(services map[string][]Method) (addedServi
 			if method.Opts == nil {
 				method.Opts = &MethodOpts{}
 			}
-			service.AddMethodSchema(method.Name, method.Schema, method.Func, method.Opts)
+			if err = service.AddMethodSchema(method.Name, method.Schema, method.Func, method.Opts); err != nil {
+				return nil, err
+			}
 		}
 
 		addedServices[name] = service
