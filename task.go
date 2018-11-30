@@ -14,6 +14,7 @@ type NexusConn struct {
 
 type Task struct {
 	nexus.Task
+	Service *Service
 }
 
 func (t *Task) GetConn() *NexusConn {

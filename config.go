@@ -10,6 +10,7 @@ import (
 )
 
 type serverConfig struct {
+	Name         string
 	Url          string
 	User         string
 	Pass         string
@@ -92,6 +93,9 @@ func parseConfig() (error, map[string]interface{}) {
 		server, err := ei.N(config).M("server").MapStr()
 		if err != nil {
 			return fmt.Errorf(InvalidConfigErr, "server", "must be map"), ei.M{"type": "invalid_param"}
+		}
+		if configServer.Name, err = ei.N(server).M("name").String(); err != nil {
+			return fmt.Errorf(InvalidConfigErr, "server.name", "must be string"), ei.M{"type": "invalid_param"}
 		}
 		if _, ok := server["url"]; !ok {
 			return fmt.Errorf(MissingConfigErr, "server.url"), ei.M{"type": "missing_param"}
@@ -286,6 +290,7 @@ func NewServerFromConfig() (*ServerFromConfig, error) {
 	}
 	return &ServerFromConfig{
 		Server{
+			Name:         configServer.Name,
 			Url:          configServer.Url,
 			User:         configServer.User,
 			Pass:         configServer.Pass,
@@ -320,6 +325,9 @@ func (s *ServerFromConfig) AddService(name string) (*Service, error) {
 	}
 	svc := &Service{Name: name, Description: svcfg.Description, Url: s.Url, User: s.User, Pass: s.Pass, Path: svcfg.Path, Pulls: svcfg.Pulls, PullTimeout: time.Duration(svcfg.PullTimeout * float64(time.Second)), MaxThreads: svcfg.MaxThreads, StatsPeriod: s.StatsPeriod, GracefulExit: s.GracefulExit, LogLevel: s.LogLevel, Version: svcfg.Version, Testing: s.Testing, sharedSchemas: s.sharedSchemas}
 	s.services[name] = svc
+	if s.logPath == "" {
+		s.logPath = "server/" + name
+	}
 	return svc, nil
 }
 
