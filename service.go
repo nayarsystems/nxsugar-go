@@ -577,30 +577,29 @@ func (s *Service) Serve() error {
 		// Dial
 		s.connLock.Lock()
 		s.nc, err = nxcli.Dial(s.Url, nxcli.NewDialOptions())
+		s.connLock.Unlock()
 		if err != nil {
 			if err == nxcli.ErrVersionIncompatible {
 				s.LogWithFields(WarnLevel, ei.M{"type": "incompatible_version"}, "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, s.nc.NexusVersion)
 			} else {
 				err = fmt.Errorf("can't connect to nexus server (%s): %s", s.Url, err.Error())
 				s.LogWithFields(ErrorLevel, ei.M{"type": "connection_error"}, err.Error())
-				s.connLock.Unlock()
 				return err
 			}
 		}
-		s.connLock.Unlock()
+
 		s.setState(StateLoggingIn)
-		s.connLock.Lock()
 
 		// Login
+		s.connLock.Lock()
 		_, err = s.nc.Login(s.User, s.Pass)
+		s.connLock.Unlock()
 		if err != nil {
 			err = fmt.Errorf("can't login to nexus server (%s) as (%s): %s", s.Url, s.User, err.Error())
 			s.LogWithFields(ErrorLevel, ei.M{"type": "login_error"}, err.Error())
-			s.connLock.Unlock()
 			return err
 		}
 		s.connId = s.nc.Id()
-		s.connLock.Unlock()
 	}
 	s.setState(StateServing)
 
