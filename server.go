@@ -341,7 +341,10 @@ func (s *Server) Stop() {
 func (s *Server) getConnid() string {
 	s.connLock.Lock()
 	defer s.connLock.Unlock()
-	return s.nc.Id()
+	if s.nc != nil {
+		return s.nc.Id()
+	}
+	retirm ""
 }
 
 // Log allows to log from the server with the default format used by nxsugar
