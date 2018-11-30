@@ -257,7 +257,7 @@ func (s *Service) initMethods() {
 				"shared":  shared,
 			})
 			if err != nil {
-				Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", t.Path, t.Method), "Could not send result: %s", err.Error())
+				s.LogWithFields(ErrorLevel, ei.M{"type": "send_result", "where": fmt.Sprintf("%s%s", t.Path, t.Method)}, "Could not send result: %s", err.Error())
 				t.SendError(ErrInternal, "could not send result", nil)
 			}
 		},
@@ -280,7 +280,7 @@ func (s *Service) initMethods() {
 				"stats":         *s.stats,
 			})
 			if err != nil {
-				Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", t.Path, t.Method), "Could not send result: %s", err.Error())
+				s.LogWithFields(ErrorLevel, ei.M{"type": "send_result", "where": fmt.Sprintf("%s%s", t.Path, t.Method)}, "Could not send result: %s", err.Error())
 				t.SendError(ErrInternal, "could not send result", nil)
 			}
 		},
@@ -291,7 +291,7 @@ func (s *Service) initMethods() {
 		f: func(t *Task) {
 			_, err := t.SendResult("pong")
 			if err != nil {
-				Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", t.Path, t.Method), "Could not send result: %s", err.Error())
+				s.LogWithFields(ErrorLevel, ei.M{"type": "send_result", "where": fmt.Sprintf("%s%s", t.Path, t.Method)}, "Could not send result: %s", err.Error())
 				t.SendError(ErrInternal, "could not send result", nil)
 			}
 		},
@@ -313,12 +313,12 @@ func defMethodWrapper(f func(*Task) (interface{}, *JsonRpcErr)) func(*Task) {
 		if err != nil {
 			_, serr := t.SendError(err.Cod, err.Mess, err.Dat)
 			if serr != nil {
-				Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", t.Path, t.Method), "Could not send error: %s", serr.Error())
+				t.Service.LogWithFields(ErrorLevel, ei.M{"type": "send_error", "where": fmt.Sprintf("%s%s", t.Path, t.Method)}, "Could not send error: %s", err.Error())
 			}
 		} else {
 			_, serr := t.SendResult(res)
 			if serr != nil {
-				Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", t.Path, t.Method), "Could not send result: %s", serr.Error())
+				t.Service.LogWithFields(ErrorLevel, ei.M{"type": "send_result", "where": fmt.Sprintf("%s%s", t.Path, t.Method)}, "Could not send result: %s", err.Error())
 				t.SendError(ErrInternal, "could not send result", nil)
 			}
 		}
@@ -349,16 +349,16 @@ func ReplyToWrapper(f func(*Task) (interface{}, *JsonRpcErr)) func(*Task) (inter
 		t.Tags["@local-repliedTo"] = true
 		_, err := t.Accept()
 		if err != nil {
-			Log(WarnLevel, "replyto wrapper", "could not accept task: %s", err.Error())
+			t.Service.LogWithFields(WarnLevel, ei.M{"type": "reply_to_accept"}, "could not accept task: %s", err.Error())
 		} else if repTy == "pipe" {
 			if pipe, err := t.GetConn().PipeOpen(repPath); err != nil {
-				Log(WarnLevel, "replyto wrapper", "could not open received pipeId (%s): %s", repPath, err.Error())
+				t.Service.LogWithFields(WarnLevel, ei.M{"type": "reply_to_accept"}, "could not open received pipeId (%s): %s", repPath, err.Error())
 			} else if _, err = pipe.Write(map[string]interface{}{"result": res, "error": errm, "task": map[string]interface{}{"path": t.Path, "method": t.Method, "params": t.Params, "tags": t.Tags}}); err != nil {
-				Log(WarnLevel, "replyto wrapper", "error writing response to pipe: %s", err.Error())
+				t.Service.LogWithFields(WarnLevel, ei.M{"type": "reply_to_accept"}, "error writing response to pipe: %s", err.Error())
 			}
 		} else if repTy == "service" {
 			if _, err := t.GetConn().TaskPush(repPath, map[string]interface{}{"result": res, "error": errm, "task": map[string]interface{}{"path": t.Path, "method": t.Method, "params": t.Params, "tags": t.Tags}}, time.Second*30, &nexus.TaskOpts{Detach: true}); err != nil {
-				Log(WarnLevel, "replyto wrapper", "could not push response task to received path (%s): %s", repPath, err.Error())
+				t.Service.LogWithFields(WarnLevel, ei.M{"type": "reply_to_accept"}, "could not push response task to received path (%s): %s", repPath, err.Error())
 			}
 		}
 		return res, errm
@@ -535,7 +535,7 @@ func (s *Service) Serve() error {
 		_, err = url.Parse(s.Url)
 		if err != nil {
 			err = fmt.Errorf("invalid nexus url (%s): %s", s.Url, err.Error())
-			LogWithFields(ErrorLevel, "server", ei.M{"type": "invalid_url"}, err.Error())
+			s.LogWithFields(ErrorLevel, ei.M{"type": "invalid_url"}, err.Error())
 			return err
 		}
 	}
@@ -579,10 +579,10 @@ func (s *Service) Serve() error {
 		s.nc, err = nxcli.Dial(s.Url, nxcli.NewDialOptions())
 		if err != nil {
 			if err == nxcli.ErrVersionIncompatible {
-				LogWithFields(WarnLevel, "server", ei.M{"type": "incompatible_version"}, "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, s.nc.NexusVersion)
+				s.LogWithFields(WarnLevel, ei.M{"type": "incompatible_version"}, "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, s.nc.NexusVersion)
 			} else {
 				err = fmt.Errorf("can't connect to nexus server (%s): %s", s.Url, err.Error())
-				LogWithFields(ErrorLevel, "server", ei.M{"type": "connection_error"}, err.Error())
+				s.LogWithFields(ErrorLevel, ei.M{"type": "connection_error"}, err.Error())
 				s.connLock.Unlock()
 				return err
 			}
@@ -595,7 +595,7 @@ func (s *Service) Serve() error {
 		_, err = s.nc.Login(s.User, s.Pass)
 		if err != nil {
 			err = fmt.Errorf("can't login to nexus server (%s) as (%s): %s", s.Url, s.User, err.Error())
-			LogWithFields(ErrorLevel, "server", ei.M{"type": "login_error"}, err.Error())
+			s.LogWithFields(ErrorLevel, ei.M{"type": "login_error"}, err.Error())
 			s.connLock.Unlock()
 			return err
 		}
@@ -623,10 +623,10 @@ func (s *Service) Serve() error {
 			signalChan := make(chan os.Signal, 1)
 			signal.Notify(signalChan, os.Interrupt)
 			<-signalChan
-			LogWithFields(DebugLevel, "signal", ei.M{"type": "graceful_requested"}, "received SIGINT: stop gracefuly")
+			s.LogWithFields(DebugLevel, ei.M{"type": "graceful_requested"}, "received SIGINT: stop gracefuly")
 			s.GracefulStop()
 			<-signalChan
-			LogWithFields(DebugLevel, "signal", ei.M{"type": "stop_requested"}, "received SIGINT again: stop")
+			s.LogWithFields(DebugLevel, ei.M{"type": "stop_requested"}, "received SIGINT again: stop")
 			s.Stop()
 		}()
 	}
@@ -726,7 +726,7 @@ func (s *Service) taskPull(n int) {
 
 		// A task has been pulled
 		atomic.AddUint64(&s.stats.TasksPulled, 1)
-		wtask := &Task{*task}
+		wtask := &Task{*task, s}
 
 		// Get method or global handler
 		m := s.handler
@@ -736,7 +736,7 @@ func (s *Service) taskPull(n int) {
 			if !ok { // Method not found
 				_, err = wtask.SendError(ErrMethodNotFound, "", nil)
 				if err != nil {
-					Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+					s.LogWithFields(ErrorLevel, ei.M{"type": "send_error", "where": fmt.Sprintf("%s%s", wtask.Path, wtask.Method)}, "Could not send error: %s", err.Error())
 				}
 				atomic.AddUint64(&s.stats.TasksMethodNotFound, 1)
 				s.threadsSem.Release()
@@ -746,7 +746,7 @@ func (s *Service) taskPull(n int) {
 
 		// Log pull
 		if !m.disablePullLog {
-			s.LogWithFields(InfoLevel, ei.M{"type": "pull", "path": wtask.Path, "method": wtask.Method, "params": wtask.Params, "tags": wtask.Tags}, "pull %d: task[ path=%s method=%s params=%+v tags=%+v ]", n, wtask.Path, wtask.Method, wtask.Params, wtask.Tags)
+			s.LogWithFields(InfoLevel, ei.M{"type": "pull", "path": wtask.Path, "method": wtask.Method, "params": wtask.Params, "user": wtask.User}, "pull %d: task[ path=%s method=%s user=%s params=%+v ]", n, wtask.Path, wtask.Method, wtask.User, wtask.Params)
 		}
 
 		// Execute the task
@@ -769,7 +769,7 @@ func (s *Service) taskPull(n int) {
 					s.LogWithFields(ErrorLevel, ei.M{"type": "task_exception"}, "pull %d: panic serving task: %s: %s", n, nerr.Error(), stck)
 					_, err = wtask.SendError(ErrInternal, fmt.Sprintf("%s: %s", nerr.Error(), stck), nil)
 					if err != nil {
-						Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+						s.LogWithFields(ErrorLevel, ei.M{"type": "send_error", "where": fmt.Sprintf("%s%s", wtask.Path, wtask.Method)}, "Could not send error: %s", err.Error())
 					}
 				}
 			}()
@@ -783,7 +783,7 @@ func (s *Service) taskPull(n int) {
 						if reflect.DeepEqual(pactm, wtask.Params) {
 							_, err = wtask.SendResult(pact.output)
 							if err != nil {
-								Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+								s.LogWithFields(ErrorLevel, ei.M{"type": "send_error", "where": fmt.Sprintf("%s%s", wtask.Path, wtask.Method)}, "Could not send error: %s", err.Error())
 							}
 							atomic.AddUint64(&s.stats.TasksServed, 1)
 							return
@@ -792,7 +792,7 @@ func (s *Service) taskPull(n int) {
 				}
 				_, err = wtask.SendError(ErrPactNotDefined, ErrStr[ErrPactNotDefined], nil)
 				if err != nil {
-					Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+					s.LogWithFields(ErrorLevel, ei.M{"type": "send_error", "where": fmt.Sprintf("%s%s", wtask.Path, wtask.Method)}, "Could not send error: %s", err.Error())
 				}
 				atomic.AddUint64(&s.stats.TasksServed, 1)
 				return
@@ -804,7 +804,7 @@ func (s *Service) taskPull(n int) {
 				if err != nil { // Error with schemas
 					_, err = wtask.SendError(ErrInvalidParams, fmt.Sprintf("jsonschema validation failed: %s", err.Error()), nil)
 					if err != nil {
-						Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+						s.LogWithFields(ErrorLevel, ei.M{"type": "send_error", "where": fmt.Sprintf("%s%s", wtask.Path, wtask.Method)}, "Could not send error: %s", err.Error())
 					}
 					atomic.AddUint64(&s.stats.TasksServed, 1)
 					return
@@ -812,7 +812,7 @@ func (s *Service) taskPull(n int) {
 					out := fmt.Sprintf("jsonschema validation failed: %s", schemaValidationErr(result))
 					_, err = wtask.SendError(ErrInvalidParams, out, nil)
 					if err != nil {
-						Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+						s.LogWithFields(ErrorLevel, ei.M{"type": "send_error", "where": fmt.Sprintf("%s%s", wtask.Path, wtask.Method)}, "Could not send error: %s", err.Error())
 					}
 					atomic.AddUint64(&s.stats.TasksServed, 1)
 					return
@@ -824,7 +824,7 @@ func (s *Service) taskPull(n int) {
 				if m.testf == nil {
 					_, err = wtask.SendError(ErrTestingMethodNotProvided, ErrStr[ErrTestingMethodNotProvided], nil)
 					if err != nil {
-						Log(ErrorLevel, fmt.Sprintf("method wrapper: %s%s", wtask.Path, wtask.Method), "Could not send error: %s", err.Error())
+						s.LogWithFields(ErrorLevel, ei.M{"type": "send_error", "where": fmt.Sprintf("%s%s", wtask.Path, wtask.Method)}, "Could not send error: %s", err.Error())
 					}
 					atomic.AddUint64(&s.stats.TasksServed, 1)
 					return
@@ -837,10 +837,10 @@ func (s *Service) taskPull(n int) {
 
 			// Log response
 			if m.enableResponseResultLog && wtask.Tags["@local-response-result"] != nil {
-				s.LogWithFields(InfoLevel, ei.M{"type": "response_result", "path": wtask.Path, "method": wtask.Method}, "pull %d: task[ path=%s method=%s result=%+v ]", n, wtask.Path, wtask.Method, wtask.Tags["@local-response-result"])
+				s.LogWithFields(InfoLevel, ei.M{"type": "response_result", "path": wtask.Path, "method": wtask.Method, "user": wtask.User, "params": wtask.Params, "result": wtask.Tags["@local-response-result"]}, "pull %d: task[ path=%s method=%s user=%s result=%+v ]", n, wtask.Path, wtask.Method, wtask.User, wtask.Tags["@local-response-result"])
 			}
 			if m.enableResponseErrorLog && wtask.Tags["@local-response-error"] != nil {
-				s.LogWithFields(InfoLevel, ei.M{"type": "response_error", "path": wtask.Path, "method": wtask.Method}, "pull %d: task[ path=%s method=%s error=%+v ]", n, wtask.Path, wtask.Method, wtask.Tags["@local-response-error"])
+				s.LogWithFields(InfoLevel, ei.M{"type": "response_error", "path": wtask.Path, "method": wtask.Method, "user": wtask.User, "params": wtask.Params, "error": wtask.Tags["@local-response-error"]}, "pull %d: task[ path=%s method=%s user=%S error=%+v ]", n, wtask.Path, wtask.Method, wtask.User, wtask.Tags["@local-response-error"])
 			}
 
 			// Validate result schema
@@ -888,7 +888,7 @@ func (s *Service) Log(level string, message string, args ...interface{}) {
 	if connid != "" {
 		fields["connid"] = connid
 	}
-	LogWithFields(level, s.Name, fields, message, args...)
+	LogWithFields(level, s.Name+"/"+s.Path, fields, message, args...)
 }
 
 // LogWithFields allows to log from the service with the default format used by nxsugar adding some custom fields
@@ -900,7 +900,7 @@ func (s *Service) LogWithFields(level string, fields map[string]interface{}, mes
 	if connid != "" {
 		fields["connid"] = connid
 	}
-	LogWithFields(level, s.Name, fields, message, args...)
+	LogWithFields(level, s.Name+"/"+s.Path, fields, message, args...)
 }
 
 // String returns some service info as a stirng

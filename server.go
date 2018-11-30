@@ -22,6 +22,7 @@ Its configuration can be changed with calls to `Set...()`.
 After it has been configured, services can be added with calls to `AddService()`, the server configuration will be used as default configuration for the service.
 */
 type Server struct {
+	Name          string
 	Url           string
 	User          string
 	Pass          string
@@ -39,6 +40,7 @@ type Server struct {
 	services      map[string]*Service
 	wg            *sync.WaitGroup
 	connLock      sync.Mutex
+	logPath       string
 }
 
 /*
@@ -59,6 +61,14 @@ func (s *Server) GetConn() *NexusConn {
 		return nil
 	}
 	return &NexusConn{NexusConn: s.nc}
+}
+
+/*
+SetName changes the name that the server uses when logging.
+*/
+func (s *Server) SetName(name string) {
+	s.Name = name
+	s.logPath = name
 }
 
 /*
@@ -158,7 +168,7 @@ func (s *Server) AddSharedSchemaFromFile(id string, file string) error {
 	contents, err := ioutil.ReadFile(file)
 	if err != nil {
 		err = fmt.Errorf("error adding shared jsonschema (%s) from file (%s): %s", id, file, err.Error())
-		LogWithFields(ErrorLevel, "server", ei.M{"type": "shared_file"}, err.Error())
+		s.LogWithFields(ErrorLevel, ei.M{"type": "shared_file"}, err.Error())
 		return err
 	}
 	return s.addSharedSchema(id, string(contents))
@@ -170,13 +180,13 @@ func (s *Server) addSharedSchema(id string, schema string) error {
 	}
 	if _, ok := s.sharedSchemas[id]; ok {
 		err := fmt.Errorf("error adding shared jsonschema (%s): an schema with given id already exists", id)
-		LogWithFields(ErrorLevel, "server", ei.M{"type": "adding_shared"}, err.Error())
+		s.LogWithFields(ErrorLevel, ei.M{"type": "adding_shared"}, err.Error())
 		return err
 	}
 	loader, err := getSchemaLoaderFromJson(schema)
 	if err != nil {
 		err = fmt.Errorf("error adding shared jsonschema (%s): %s", id, err.Error())
-		LogWithFields(ErrorLevel, "server", ei.M{"type": "adding_shared"}, err.Error())
+		s.LogWithFields(ErrorLevel, ei.M{"type": "adding_shared"}, err.Error())
 		return err
 	}
 	s.sharedSchemas[id] = loader
@@ -201,6 +211,9 @@ func (s *Server) AddService(name string, path string, opts *ServiceOpts) *Servic
 		svc.Testing = opts.Testing
 	}
 	s.services[name] = svc
+	if s.logPath == "" {
+		s.logPath = "server/" + name
+	}
 	return svc
 }
 
@@ -225,14 +238,14 @@ func (s *Server) Serve() error {
 	_, err := url.Parse(s.Url)
 	if err != nil {
 		err = fmt.Errorf("invalid nexus url (%s): %s", s.Url, err.Error())
-		LogWithFields(ErrorLevel, "server", ei.M{"type": "invalid_url"}, err.Error())
+		s.LogWithFields(ErrorLevel, ei.M{"type": "invalid_url"}, err.Error())
 		return err
 	}
 
 	// Check services
 	if s.services == nil || len(s.services) == 0 {
 		err = fmt.Errorf("no services to serve")
-		LogWithFields(ErrorLevel, "server", ei.M{"type": "no_services"}, err.Error())
+		s.LogWithFields(ErrorLevel, ei.M{"type": "no_services"}, err.Error())
 		return err
 	}
 
@@ -242,10 +255,10 @@ func (s *Server) Serve() error {
 	s.nc, err = nxcli.Dial(s.Url, nxcli.NewDialOptions())
 	if err != nil {
 		if err == nxcli.ErrVersionIncompatible {
-			LogWithFields(WarnLevel, "server", ei.M{"type": "incompatible_version"}, "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, s.nc.NexusVersion)
+			s.LogWithFields(WarnLevel, ei.M{"type": "incompatible_version"}, "connecting to an incompatible version of nexus at (%s): client (%s) server (%s)", s.Url, nxcli.Version, s.nc.NexusVersion)
 		} else {
 			err = fmt.Errorf("can't connect to nexus server (%s): %s", s.Url, err.Error())
-			LogWithFields(ErrorLevel, "server", ei.M{"type": "connection_error"}, err.Error())
+			s.LogWithFields(ErrorLevel, ei.M{"type": "connection_error"}, err.Error())
 			s.connLock.Unlock()
 			return err
 		}
@@ -256,7 +269,7 @@ func (s *Server) Serve() error {
 	_, err = s.nc.Login(s.User, s.Pass)
 	if err != nil {
 		err = fmt.Errorf("can't login to nexus server (%s) as (%s): %s", s.Url, s.User, err.Error())
-		LogWithFields(ErrorLevel, "server", ei.M{"type": "login_error"}, err.Error())
+		s.LogWithFields(ErrorLevel, ei.M{"type": "login_error"}, err.Error())
 		s.connLock.Unlock()
 		return err
 	}
@@ -273,12 +286,12 @@ func (s *Server) Serve() error {
 		signalChan := make(chan os.Signal, 1)
 		signal.Notify(signalChan, os.Interrupt)
 		<-signalChan
-		LogWithFields(DebugLevel, "signal", ei.M{"type": "graceful_requested"}, "received SIGINT: stop gracefuly")
+		s.LogWithFields(DebugLevel, ei.M{"type": "graceful_requested"}, "received SIGINT: stop gracefuly")
 		for _, svc := range s.services {
 			svc.GracefulStop()
 		}
 		<-signalChan
-		LogWithFields(DebugLevel, "signal", ei.M{"type": "stop_requested"}, "received SIGINT again: stop")
+		s.LogWithFields(DebugLevel, ei.M{"type": "stop_requested"}, "received SIGINT again: stop")
 		for _, svc := range s.services {
 			svc.Stop()
 		}
@@ -323,4 +336,32 @@ func (s *Server) Stop() {
 	for _, svc := range s.services {
 		svc.Stop()
 	}
+}
+
+func (s *Server) getConnid() string {
+	s.connLock.Lock()
+	defer s.connLock.Unlock()
+	return s.nc.Id()
+}
+
+// Log allows to log from the server with the default format used by nxsugar
+func (s *Server) Log(level string, message string, args ...interface{}) {
+	fields := map[string]interface{}{}
+	connid := s.getConnid()
+	if connid != "" {
+		fields["connid"] = connid
+	}
+	LogWithFields(level, s.logPath, fields, message, args...)
+}
+
+// LogWithFields allows to log from the server with the default format used by nxsugar adding some custom fields
+func (s *Server) LogWithFields(level string, fields map[string]interface{}, message string, args ...interface{}) {
+	if fields == nil {
+		fields = map[string]interface{}{}
+	}
+	connid := s.getConnid()
+	if connid != "" {
+		fields["connid"] = connid
+	}
+	LogWithFields(level, s.logPath, fields, message, args...)
 }
