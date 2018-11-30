@@ -344,7 +344,7 @@ func (s *Server) getConnid() string {
 	if s.nc != nil {
 		return s.nc.Id()
 	}
-	retirm ""
+	return ""
 }
 
 // Log allows to log from the server with the default format used by nxsugar
