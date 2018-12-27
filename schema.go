@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 
 	"github.com/jaracil/ei"
 	"github.com/xeipuuv/gojsonschema"
@@ -93,6 +94,24 @@ func (s *Service) AddMethodSchema(name string, schema *Schema, f func(*Task) (in
 	return s.addMethod(name, schema, f, opts[0])
 }
 
+func (s *Service) computeMethodSchemas(name string) {
+	// Resolve schemas
+	resolvedMethodSchemas := map[string]interface{}{}
+	if s.methods[name].inSchema != nil {
+		resolvedMethodSchemas["input"] = resolveSchemaRefs(nil, s.methods[name].inSchema.json, s.sharedSchemas)
+	}
+	if s.methods[name].resSchema != nil {
+		resolvedMethodSchemas["result"] = resolveSchemaRefs(nil, s.methods[name].resSchema.json, s.sharedSchemas)
+	}
+	if s.methods[name].errSchema != nil {
+		resolvedMethodSchemas["error"] = resolveSchemaRefs(nil, s.methods[name].errSchema.json, s.sharedSchemas)
+	}
+	if s.methods[name].pacts != nil && len(s.methods[name].pacts) != 0 {
+		resolvedMethodSchemas["pacts"] = resolveSchemaRefs(nil, s.methods[name].pacts, s.sharedSchemas)
+	}
+	s.methods[name].computedSchema = resolvedMethodSchemas
+}
+
 func (s *Service) addSchemaToMethod(name string, schema *Schema) (error, map[string]interface{}) {
 	// Add schema from file
 	if schema.FromFile != "" {
@@ -147,6 +166,7 @@ func (s *Service) addSchemaToMethod(name string, schema *Schema) (error, map[str
 			}
 		}
 		file.Close()
+		s.computeMethodSchemas(name)
 		return nil, nil
 	}
 
@@ -188,6 +208,8 @@ func (s *Service) addSchemaToMethod(name string, schema *Schema) (error, map[str
 			}
 		}
 	}
+
+	s.computeMethodSchemas(name)
 	return nil, nil
 }
 
@@ -247,4 +269,106 @@ func schemaValidationErr(result *gojsonschema.Result) string {
 		}
 		return out
 	}
+}
+
+func resolveSchemaRefs(seen map[string]bool, schema interface{}, shared map[string]gojsonschema.JSONLoader) interface{} {
+	schMap, errMap := ei.N(schema).MapStr()
+	if errMap != nil {
+		return schema
+	}
+
+	if seen == nil {
+		seen = map[string]bool{}
+	}
+
+	// If a valid $ref is found return it
+	for f, v := range schMap {
+		if f == "$ref" {
+			refVal := ei.N(v).StringZ()
+			if !seen[refVal] {
+				seen[refVal] = true
+				id, pointer := schemaRefParse(refVal)
+				if id != "" {
+					if found := findSharedSchemaRef(id, pointer, shared); found != nil {
+						return resolveSchemaRefs(copySeenMap(seen), found, shared)
+					}
+				}
+			}
+			return schema
+		}
+	}
+
+	// If no valid $ref is found, resolve the fields
+	newMap := map[string]interface{}{}
+	for f, v := range schMap {
+		if _, err := ei.N(v).MapStr(); err == nil {
+			newMap[f] = resolveSchemaRefs(copySeenMap(seen), v, shared)
+		} else if arrV, err := ei.N(v).Slice(); err == nil {
+			newArrV := []interface{}{}
+			for _, av := range arrV {
+				newArrV = append(newArrV, resolveSchemaRefs(copySeenMap(seen), av, shared))
+			}
+			newMap[f] = newArrV
+		} else {
+			newMap[f] = v
+		}
+	}
+
+	return newMap
+}
+
+func copySeenMap(seen map[string]bool) map[string]bool {
+	newSeen := map[string]bool{}
+	for f, v := range seen {
+		newSeen[f] = v
+	}
+	return newSeen
+}
+
+func findSharedSchemaRef(id string, pointer string, shared map[string]gojsonschema.JSONLoader) interface{} {
+	if s, ok := shared[id]; ok {
+		sch := s.JsonSource()
+		if pointer != "" {
+			var err error
+			for _, p := range getJsonPointerList(pointer) {
+				sch, err = ei.N(sch).M(p).Raw()
+				if err != nil {
+					return nil
+				}
+			}
+		}
+		return sch
+	}
+	return nil
+}
+
+func schemaRefParse(ref string) (string, string) {
+	var id, pointer string
+	if strings.HasPrefix(ref, "http://nexus.service/") {
+		ref = strings.TrimPrefix(ref, "http://nexus.service/")
+		spl := strings.SplitN(ref, "#", 2)
+		if len(spl) != 0 {
+			id = spl[0]
+			if len(spl) == 2 {
+				pointer = spl[1]
+			}
+		}
+	}
+	return id, pointer
+}
+
+func getJsonPointerList(pointer string) []string {
+	pointer = strings.TrimPrefix(pointer, "/")
+	spl := strings.Split(pointer, "/")
+	if len(spl) == 0 {
+		return []string{}
+	}
+	return spl
+}
+
+func schemaPathAdd(path string, add string) string {
+	if path == "" {
+		return add
+	}
+	return path + "." + add
 }

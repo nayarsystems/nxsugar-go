@@ -89,6 +89,7 @@ type method struct {
 	resSchema               *methodSchema
 	errSchema               *methodSchema
 	pacts                   []*methodPact
+	computedSchema          interface{}
 	f                       func(t *Task)
 	testf                   func(t *Task)
 }
@@ -229,38 +230,30 @@ func (s *Service) initMethods() {
 	// Add @schema method
 	s.methods["@schema"] = &method{
 		f: func(t *Task) {
-			methods := map[string]interface{}{}
+			methodSchemas := map[string]interface{}{}
 			for name, m := range s.methods {
-				d := map[string]interface{}{}
-				if m.inSchema != nil || m.resSchema != nil || m.errSchema != nil {
-					if m.inSchema != nil {
-						d["input"] = m.inSchema.json
-					}
-					if m.resSchema != nil {
-						d["result"] = m.resSchema.json
-					}
-					if m.errSchema != nil {
-						d["error"] = m.errSchema.json
-					}
-					if m.pacts != nil {
-						d["pacts"] = m.pacts
-					}
+				methodSchemas[name] = m.computedSchema
+			}
+
+			sendRes := ei.M{
+				"methods": methodSchemas,
+			}
+
+			if ei.N(t.Params).M("include_shared").BoolZ() {
+				sharedSchemas := map[string]interface{}{}
+				for name, s := range s.sharedSchemas {
+					sharedSchemas[name] = s.JsonSource()
 				}
-				methods[name] = d
+				sendRes["shared"] = sharedSchemas
 			}
-			shared := map[string]interface{}{}
-			for name, s := range s.sharedSchemas {
-				shared[name] = s.JsonSource()
-			}
-			_, err := t.SendResult(ei.M{
-				"methods": methods,
-				"shared":  shared,
-			})
+
+			_, err := t.SendResult(sendRes)
 			if err != nil {
 				s.LogWithFields(ErrorLevel, ei.M{"type": "send_result", "where": fmt.Sprintf("%s%s", t.Path, t.Method)}, "Could not send result: %s", err.Error())
 				t.SendError(ErrInternal, "could not send result", nil)
 			}
 		},
+		computedSchema: map[string]interface{}{},
 	}
 
 	// Add @info method
@@ -284,6 +277,7 @@ func (s *Service) initMethods() {
 				t.SendError(ErrInternal, "could not send result", nil)
 			}
 		},
+		computedSchema: map[string]interface{}{},
 	}
 
 	// Add @ping method
@@ -295,6 +289,7 @@ func (s *Service) initMethods() {
 				t.SendError(ErrInternal, "could not send result", nil)
 			}
 		},
+		computedSchema: map[string]interface{}{},
 	}
 }
 
