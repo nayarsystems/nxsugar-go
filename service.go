@@ -308,12 +308,12 @@ func defMethodWrapper(f func(*Task) (interface{}, *JsonRpcErr)) func(*Task) {
 		if err != nil {
 			_, serr := t.SendError(err.Cod, err.Mess, err.Dat)
 			if serr != nil {
-				t.Service.LogWithFields(ErrorLevel, ei.M{"type": "send_error", "where": fmt.Sprintf("%s%s", t.Path, t.Method)}, "Could not send error: %s", err.Error())
+				t.Service.LogWithFields(ErrorLevel, ei.M{"type": "send_error", "where": fmt.Sprintf("%s%s", t.Path, t.Method)}, "Could not send error: %s", serr.Error())
 			}
 		} else {
 			_, serr := t.SendResult(res)
 			if serr != nil {
-				t.Service.LogWithFields(ErrorLevel, ei.M{"type": "send_result", "where": fmt.Sprintf("%s%s", t.Path, t.Method)}, "Could not send result: %s", err.Error())
+				t.Service.LogWithFields(ErrorLevel, ei.M{"type": "send_result", "where": fmt.Sprintf("%s%s", t.Path, t.Method)}, "Could not send result: %s", serr.Error())
 				t.SendError(ErrInternal, "could not send result", nil)
 			}
 		}
