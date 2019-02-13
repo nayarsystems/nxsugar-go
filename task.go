@@ -14,7 +14,7 @@ type NexusConn struct {
 
 type Task struct {
 	nexus.Task
-	Service *Service
+	Service *Service `json:"-"`
 }
 
 func (t *Task) GetConn() *NexusConn {
