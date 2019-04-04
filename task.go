@@ -1,6 +1,8 @@
 package nxsugar
 
 import (
+	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/jaracil/ei"
@@ -9,12 +11,30 @@ import (
 
 type NexusConn struct {
 	*nexus.NexusConn
-	trackid string
+	trackid          string
+	isMocked         bool
+	mockResponses    []TaskMockResponse
+	responseCountRef *uint64
 }
 
 type Task struct {
 	nexus.Task
-	Service *Service `json:"-"`
+	Service       *Service `json:"-"`
+	isMocked      bool
+	mockResponses []TaskMockResponse
+	responseCount uint64
+}
+
+type TaskMockResponse struct {
+	Result interface{}
+	Error  error
+}
+
+func NewMockedTask(task *Task, mockedResponses []TaskMockResponse) *Task {
+	task.isMocked = true
+	task.mockResponses = mockedResponses
+	task.responseCount = 0
+	return task
 }
 
 func (t *Task) GetConn() *NexusConn {
@@ -25,7 +45,7 @@ func (t *Task) GetConn() *NexusConn {
 	if conn := t.Task.GetConn(); conn == nil {
 		return nil
 	} else {
-		return &NexusConn{conn, tid}
+		return &NexusConn{conn, tid, t.isMocked, t.mockResponses, &t.responseCount}
 	}
 }
 
@@ -47,6 +67,13 @@ func (nc *NexusConn) TaskPush(method string, params interface{}, timeout time.Du
 		md["trackid"] = tid
 		pm["@metadata"] = md
 		params = pm
+	}
+	if nc.isMocked {
+		mockResIdx := atomic.AddUint64(nc.responseCountRef, 1)
+		if len(nc.mockResponses) < int(mockResIdx) {
+			return nil, fmt.Errorf("No more mock responses")
+		}
+		return nc.mockResponses[mockResIdx-1], nil
 	}
 	return nc.NexusConn.TaskPush(method, params, timeout, opts...)
 }
