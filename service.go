@@ -720,7 +720,7 @@ func (s *Service) taskPull(n int) {
 
 		// A task has been pulled
 		atomic.AddUint64(&s.stats.TasksPulled, 1)
-		wtask := &Task{*task, s}
+		wtask := &Task{Task: *task, Service: s}
 
 		// Get method or global handler
 		m := s.handler
