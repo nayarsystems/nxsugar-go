@@ -73,7 +73,8 @@ func (nc *NexusConn) TaskPush(method string, params interface{}, timeout time.Du
 		if len(nc.mockResponses) < int(mockResIdx) {
 			return nil, fmt.Errorf("No more mock responses")
 		}
-		return nc.mockResponses[mockResIdx-1], nil
+		response := nc.mockResponses[mockResIdx-1]
+		return response.Result, response.Error
 	}
 	return nc.NexusConn.TaskPush(method, params, timeout, opts...)
 }
