@@ -85,6 +85,7 @@ type method struct {
 	disablePullLog          bool
 	enableResponseResultLog bool
 	enableResponseErrorLog  bool
+	logOnTimeExceeded       time.Duration
 	inSchema                *methodSchema
 	resSchema               *methodSchema
 	errSchema               *methodSchema
@@ -99,6 +100,7 @@ type MethodOpts struct {
 	DisablePullLog          bool
 	EnableResponseResultLog bool
 	EnableResponseErrorLog  bool
+	LogOnTimeExceeded       time.Duration
 }
 
 /*
@@ -210,7 +212,7 @@ func (s *Service) addMethod(name string, schema *Schema, f func(*Task) (interfac
 	if s.methods == nil {
 		s.initMethods()
 	}
-	s.methods[name] = &method{disablePullLog: opts.DisablePullLog, enableResponseResultLog: opts.EnableResponseResultLog, enableResponseErrorLog: opts.EnableResponseErrorLog, f: defMethodWrapper(f), testf: nil, inSchema: nil, resSchema: nil, errSchema: nil, pacts: []*methodPact{}}
+	s.methods[name] = &method{disablePullLog: opts.DisablePullLog, enableResponseResultLog: opts.EnableResponseResultLog, enableResponseErrorLog: opts.EnableResponseErrorLog, logOnTimeExceeded: opts.LogOnTimeExceeded, f: defMethodWrapper(f), testf: nil, inSchema: nil, resSchema: nil, errSchema: nil, pacts: []*methodPact{}}
 	if opts.TestFunction != nil {
 		s.methods[name].testf = defMethodWrapper(opts.TestFunction)
 	}
@@ -386,7 +388,7 @@ func (s *Service) SetHandler(h func(*Task) (interface{}, *JsonRpcErr), opts ...*
 		opts = []*MethodOpts{&MethodOpts{}}
 	}
 	opt := opts[0]
-	s.handler = &method{disablePullLog: opt.DisablePullLog, enableResponseResultLog: opt.EnableResponseResultLog, enableResponseErrorLog: opt.EnableResponseErrorLog, f: defMethodWrapper(h)}
+	s.handler = &method{disablePullLog: opt.DisablePullLog, enableResponseResultLog: opt.EnableResponseResultLog, enableResponseErrorLog: opt.EnableResponseErrorLog, logOnTimeExceeded: opt.LogOnTimeExceeded, f: defMethodWrapper(h)}
 	if opt.TestFunction != nil {
 		s.handler.testf = defMethodWrapper(opt.TestFunction)
 	}
@@ -814,6 +816,7 @@ func (s *Service) taskPull(n int) {
 			}
 
 			// Execute the task
+			started := time.Now()
 			if ei.N(wtask.Params).M("@metadata").M("testing").BoolZ() {
 				if m.testf == nil {
 					_, err = wtask.SendError(ErrTestingMethodNotProvided, ErrStr[ErrTestingMethodNotProvided], nil)
@@ -829,12 +832,17 @@ func (s *Service) taskPull(n int) {
 				m.f(wtask)
 			}
 
+			took := time.Since(started)
+			if m.logOnTimeExceeded > 0 && took > m.logOnTimeExceeded {
+				s.LogWithFields(InfoLevel, ei.M{"type": "task_time_exceeded", "path": wtask.Path, "method": wtask.Method, "params": wtask.Params, "user": wtask.User, "took": took, "log_on_time_exceeded": m.logOnTimeExceeded}, "task took too much (%v > %v): task[ path=%s method=%s user=%s params=%+v ]", took, m.logOnTimeExceeded, wtask.Path, wtask.Method, wtask.User, wtask.Params)
+			}
+
 			// Log response
 			if m.enableResponseResultLog && wtask.Tags["@local-response-result"] != nil {
-				s.LogWithFields(InfoLevel, ei.M{"type": "response_result", "path": wtask.Path, "method": wtask.Method, "user": wtask.User, "params": wtask.Params, "result": wtask.Tags["@local-response-result"]}, "pull %d: task[ path=%s method=%s user=%s result=%+v ]", n, wtask.Path, wtask.Method, wtask.User, wtask.Tags["@local-response-result"])
+				s.LogWithFields(InfoLevel, ei.M{"type": "response_result", "path": wtask.Path, "method": wtask.Method, "user": wtask.User, "params": wtask.Params, "result": wtask.Tags["@local-response-result"], "took": took}, "pull %d: task[ path=%s method=%s user=%s result=%+v ]", n, wtask.Path, wtask.Method, wtask.User, wtask.Tags["@local-response-result"])
 			}
 			if m.enableResponseErrorLog && wtask.Tags["@local-response-error"] != nil {
-				s.LogWithFields(InfoLevel, ei.M{"type": "response_error", "path": wtask.Path, "method": wtask.Method, "user": wtask.User, "params": wtask.Params, "error": wtask.Tags["@local-response-error"]}, "pull %d: task[ path=%s method=%s user=%s error=%+v ]", n, wtask.Path, wtask.Method, wtask.User, wtask.Tags["@local-response-error"])
+				s.LogWithFields(InfoLevel, ei.M{"type": "response_error", "path": wtask.Path, "method": wtask.Method, "user": wtask.User, "params": wtask.Params, "error": wtask.Tags["@local-response-error"], "took": took}, "pull %d: task[ path=%s method=%s user=%s error=%+v ]", n, wtask.Path, wtask.Method, wtask.User, wtask.Tags["@local-response-error"])
 			}
 
 			// Validate result schema
