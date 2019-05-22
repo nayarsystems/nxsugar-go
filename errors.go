@@ -23,6 +23,7 @@ const (
 	ErrInvalidTask      = -32002
 	ErrCancel           = -32001
 	ErrTimeout          = -32000
+	ErrNotSupported     = -32099
 	// nxsugar
 	ErrTestingMethodNotProvided = -20000
 	ErrPactNotDefined           = -20001
@@ -45,6 +46,7 @@ var ErrStr = map[int]string{
 	ErrTtlExpired:       "TTL expired",
 	ErrLockNotOwned:     "Lock not owned",
 	ErrConnClosed:       "Connection is closed",
+	ErrNotSupported:     "Not supported",
 	// nxsugar
 	ErrTestingMethodNotProvided: "Testing method not provided",
 	ErrPactNotDefined:           "Pact not defined for provided input",
